@@ -12,12 +12,23 @@ $ wget https://raw.githubusercontent.com/openppl-public/ppl.llm.serving/master/t
 
 在`env_setup.sh`中设置环境变量：
 ```shell
+#!/bin/bash
+
+SCRIPT=$(realpath -s "$0")
+PERF_BASE_PATH=$(dirname "$SCRIPT")
+
+# 测试参数，根据测试用例随时进行更改
 export BACKEND="vllm"
 # export BACKEND="ppl"
-export BENCHMARK_LLM=".../python/benchmark_serving_num_clients.py"
-export DATASET_PATH=".../datasets/samples_1024.json"
-export OPMX_MODEL_PATH="/mnt/llm/llm_perf/opmx_models"
-export HF_MODEL_PATH="/mnt/llm/llm_perf/hf_models"
+export MODEL_SIZE=7
+export TP_SIZE=1
+export MODE="fp16"
+
+# 脚本路径、数据集路径、模型路径、服务地址等
+export BENCHMARK_LLM="$PERF_BASE_PATH/python/benchmark_serving_num_clients.py"
+export DATASET_PATH="$PERF_BASE_PATH/datasets/samples_1024.json"
+export OPMX_MODEL_PATH="/mnt/llm/LLaMA/test/opmx_models"
+export HF_MODEL_PATH="/mnt/llm2/llm_perf/hf_models"
 export PPL_SERVER_URL="127.0.0.1:23333"
 export VLLM_SERVER_URL="http://127.0.0.1:8000"
 ```
@@ -28,24 +39,32 @@ $ source env_setup.sh
 
 ## 测试启动
 
+在`env_setup.sh`中设置BACKEND、MODEL_SIZE、TP_SIZE、MODE等参数，然后执行
+
+```shell
+$ source env_setup.sh
+```
+
 启动server
 
 ```shell
-$ bash ./vllm/api_bench/benchmark_server_templ_cuda.sh
+$ bash ./start_server.sh
 SERVER STARTED 27250
 ```
 
 启动测试脚本
 
 ```shell
-$ bash ./api_bench_tools/benchmark_all_cuda.sh
+$ bash benchmark_all_cuda.sh
 ```
 
-测试完成后，关闭sercer
+测试完成后，关闭server
 
 ```shell
 $ kill -9 27250
 ```
+
+结果保存在`result/`中，历史结果会自动归档在`result/$date`目录中。
 
 需要修改推理后端、数据集、服务器url等参数时,修改env_setup.sh的相应内容，然后重新执行`source env_setup.sh`。
 
