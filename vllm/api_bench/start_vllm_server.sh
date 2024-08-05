@@ -24,6 +24,12 @@ if [ -z "$TP_SIZE" ]; then
     TP_SIZE=1
 fi
 
+MODEL=$3
+
+if [ -z "$MODEL" ]; then
+    MODEL="fp16"
+fi
+
 if [ -z "$HF_MODEL_PATH" ]; then
     # HF_MODEL_PATH="/mnt/llm/llm_perf/hf_models"
     echo "[ERROR] HF_MODEL_PATH is not set"

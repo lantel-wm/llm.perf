@@ -65,11 +65,11 @@ function unittest() {
 source "$PERF_BASE_PATH/logging.sh"
 create_log "$BACKEND"
 
-_MODE_LIST=(fp16)
-_7B_TP_LIST=(1)
-_13B_TP_LIST=(2)
-_65B_TP_LIST=(8)
-_70B_TP_LIST=(8)
+# _MODE_LIST=(fp16)
+# _7B_TP_LIST=(1)
+# _13B_TP_LIST=(2)
+# _65B_TP_LIST=(8)
+# _70B_TP_LIST=(8)
 # _70B_TP_LIST=(4)
 
 # _NUM_CLIENTS_LIST=(16 32 64 128 256 512)
@@ -79,17 +79,29 @@ _NUM_CLIENTS_LIST=(10 20 30 40 50 100 200 300)
 # _NUM_TURNS_LIST=(1 2 4 8 16)
 _NUM_TURNS_LIST=(1)
 
-for MODE in "${_MODE_LIST[@]}"; do
+if [ -z "$MODEL_SIZE" ]; then
+    echo "set MODEL_SIZE in env_setup.sh first!"
+    exit 1
+fi
+
+if [ -z "$TP_SIZE" ]; then
+    echo "set TP_SIZE in env_setup.sh first!"
+    exit 1
+fi
+
+if [ -z "$MODE" ]; then
+    echo "set MODE in env_setup.sh first!"
+    exit 1
+fi
+
+# for MODE in "${_MODE_LIST[@]}"; do
 for CLIENTS in "${_NUM_CLIENTS_LIST[@]}"; do
 for TURNS in "${_NUM_TURNS_LIST[@]}"; do
 
-
-for GPUS in "${_7B_TP_LIST[@]}"; do
-    PROMPTS=1024
-    RAMP_UP_TIME=1
-    STOP_TIME=10
-    unittest 7 "$GPUS" "$PROMPTS" "$TURNS" "$CLIENTS" "$RAMP_UP_TIME" "$STOP_TIME" "$MODE"
-done
+PROMPTS=1024
+RAMP_UP_TIME=1
+STOP_TIME=10
+unittest "$MODEL_SIZE" "$TP_SIZE" "$PROMPTS" "$TURNS" "$CLIENTS" "$RAMP_UP_TIME" "$STOP_TIME" "$MODE"
 
 # for GPUS in "${_13B_TP_LIST[@]}"; do
 #     PROMPTS=1024
@@ -108,4 +120,4 @@ done
 
 done
 done
-done
+# done

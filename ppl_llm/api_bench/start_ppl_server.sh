@@ -26,6 +26,12 @@ if [ -z "$TP_SIZE" ]; then
     TP_SIZE=1
 fi
 
+MODEL=$3
+
+if [ -z "$MODEL" ]; then
+    MODEL="fp16"
+fi
+
 # MODEL_DIR="$PERF_BASE_PATH/../../hf_models/llama-${MODEL_SIZE}b-hf"
 
 if [ -z "$OPMX_MODEL_PATH" ]; then
