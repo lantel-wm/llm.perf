@@ -5,7 +5,7 @@ PERF_BASE_PATH=$(dirname "$SCRIPT")
 LOG_DIR="$PERF_BASE_PATH/benchmark_one_cuda.log"
 
 if [ -z "$BENCHMARK_LLM" ]; then
-    BENCHMARK_LLM="$PERF_BASE_PATH/python/benchmark_latency_cu11.py"
+    BENCHMARK_LLM="$PERF_BASE_PATH/python/benchmark_latency.py"
 fi
 
 MODEL_SIZE=$1

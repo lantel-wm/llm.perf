@@ -2,6 +2,9 @@
 
 ## 测试启动
 
+在运行脚本之前，先把BENCKMARK_LLM环境变量设为`benchmark_latency.py`的路径，`benchmark_latency.py`是vllm静态测试脚本，路径为`llm.perf/vllm/static_bench/python/benchmark_lantency.py`
+
+
 启动`benchmark_all_cuda.sh`即可开始测试：
 
 ```shell
