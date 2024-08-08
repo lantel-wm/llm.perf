@@ -46,11 +46,9 @@ CMD="nohup python -m lightllm.server.api_server \
 --host $LIGHTLLM_SERVER_HOST \
 --port $LIGHTLLM_SERVER_PORT \
 --tp $TP_SIZE \
---swap-space 16 \
---disable-log-requests \
---enforce-eager \
---uvicorn-log-level warning \
->> ${PERF_BASE_PATH}/log/server_vllm.log 2>&1 &"
+--max_total_token_num 120000 \
+--tokenizer_mode fast \
+>> ${PERF_BASE_PATH}/log/server_lightllm.log 2>&1 &"
 
 # --disable-log-stats \
 
