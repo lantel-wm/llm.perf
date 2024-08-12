@@ -32,7 +32,10 @@ import numpy as np
 from backend_request_func import (REQUEST_FUNCS, RequestFuncInput, RequestFuncOutput)
 from transformers import PreTrainedTokenizerBase
 
-from vllm.transformers_utils.tokenizer import get_tokenizer
+try:
+    from vllm.transformers_utils.tokenizer import get_tokenizer
+except ImportError:
+    from backend_request_func import get_tokenizer
 
 logging.basicConfig(level=logging.WARNING,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',

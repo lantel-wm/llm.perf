@@ -2,12 +2,13 @@ import json
 import os
 import sys
 import time
-import grpc
 import logging
 import traceback
 import requests
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Union
+from transformers import (AutoTokenizer, PreTrainedTokenizer,
+                          PreTrainedTokenizerFast)
 
 from ppl_server_utils import llm_pb2, llm_pb2_grpc
 
@@ -140,6 +141,7 @@ def request_openai_completions(
     return output
 
 def request_ppl_completions(request_func_input: RequestFuncInput) -> RequestFuncOutput:
+    import grpc
     api_url = request_func_input.api_url
     channel = grpc.insecure_channel(api_url)
     stub = llm_pb2_grpc.LLMServiceStub(channel)
@@ -359,7 +361,14 @@ def request_lightllm_generate_stream(
 
     return output
 
-                    
+
+def get_tokenizer(
+    pretrained_model_name_or_path: str, trust_remote_code: bool
+) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast]:
+    return AutoTokenizer.from_pretrained(pretrained_model_name_or_path,
+                                         trust_remote_code=trust_remote_code)
+
+
 
 REQUEST_FUNCS = {
     "vllm": request_openai_completions,
@@ -394,11 +403,3 @@ if __name__ == '__main__':
     print(f"output.latency: {output.latency}")
     print(f"output.ttft: {output.ttft}")
     print(f"output.error: {output.error}")
-    
-    from vllm.transformers_utils.tokenizer import get_tokenizer
-    
-    tokenizer = get_tokenizer("/mnt/llm2/llm_perf/hf_models/llama-7b-hf", trust_remote_code=True)
-    
-    output_len = len(tokenizer(output.generated_text).input_ids)
-    
-    print(f"output_len: {output_len}")
