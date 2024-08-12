@@ -20,7 +20,7 @@ function unittest() {
         O_TPS=$(echo "scale=3; $BATCH * $OUTLEN / ($LATENCY / 1000)" | bc)
         IO_TPS=$(echo "scale=3; $BATCH * ($OUTLEN + $INLEN) / ($LATENCY / 1000)" | bc)
         echo "[OK] $LATENCY, $O_TPS, $IO_TPS"
-        echo "$MODEL_SIZE,$GPUS,$BATCH,$INLEN,$OUTLEN,$MODE,$LATENCY,$O_TPS,$IO_TPS" >> "$PERF_BASE_PATH/benchmark_all_cuda_result.csv"        
+        echo "$MODEL_SIZE,$GPUS,$BATCH,$INLEN,$OUTLEN,$MODE,$LATENCY,$O_TPS,$IO_TPS" >> "$PERF_BASE_PATH/benchmark_all_cuda_result.csv"   
     fi
 }
 
@@ -43,14 +43,14 @@ _I32KO128_BATCH_SIZE_LIST=(1 2 4 8 12 16)
 _I16KO128_BATCH_SIZE_LIST=(1 2 4 8 12 16 20 24 28 32)
 
 
-for MODE in ${_MODE_LIST[@]}; do
+for MODE in "${_MODE_LIST[@]}"; do
 
 
 # for BATCH_SIZE in ${_I8O256_BATCH_SIZE_LIST[@]}; do
 #     unittest 7 1 $BATCH_SIZE 8 256 $MODE
 # done
-for BATCH_SIZE in ${_I256O512_BATCH_SIZE_LIST[@]}; do
-    unittest 7 1 $BATCH_SIZE 256 512 $MODE
+for BATCH_SIZE in "${_I256O512_BATCH_SIZE_LIST[@]}"; do
+    unittest 7 1 "$BATCH_SIZE" 256 512 "$MODE"
 done
 # for BATCH_SIZE in ${_I512O512_BATCH_SIZE_LIST[@]}; do
 #     unittest 7 1 $BATCH_SIZE 512 512 $MODE

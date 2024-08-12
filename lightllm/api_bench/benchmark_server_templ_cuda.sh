@@ -10,14 +10,14 @@ MODE=$3
 source "$PERF_BASE_PATH/logging.sh" $BACKEND
 create_server_log
 
-SERVER_PID=$(bash "$PERF_BASE_PATH/start_vllm_server.sh" "$MODEL_SIZE" "$TP_SIZE" "$MODE")
-SERVER_URL="${VLLM_SERVER_URL}"
+SERVER_PID=$(bash "$PERF_BASE_PATH/start_lightllm_server.sh" "$MODEL_SIZE" "$TP_SIZE" "$MODE")
+SERVER_URL="${LIGHTLLM_SERVER_URL}"
 
 
 function check_server_status() {
     # change MODEL_DIR according to your model path
     MODEL_DIR="${HF_MODEL_PATH}/llama-${MODEL_SIZE}b-hf"
-    CMD="python $PERF_BASE_PATH/python/check_server_status.py --server-url ${SERVER_URL} --backend vllm --model ${MODEL_DIR}"
+    CMD="python $PERF_BASE_PATH/python/check_server_status.py --server-url ${SERVER_URL} --backend lightllm --model ${MODEL_DIR}"
     status=$(eval "$CMD")
 
     if [ -z "$status" ]; then
@@ -65,6 +65,6 @@ else
         echo "[ERROR] SERVER START FAILED"
         ERROR "SERVER START FAILED"
     else
-        echo "VLLM SERVER STARTED $SERVER_PID"
+        echo "LIGHTLLM SERVER STARTED $SERVER_PID"
     fi
 fi

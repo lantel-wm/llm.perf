@@ -1,12 +1,12 @@
 import os
-import grpc
 import logging
 import argparse
 import requests
 
 
 def check_server_status(server_url: str, backend: str, model: str = "") -> str:
-    if backend in "ppl":
+    if backend in ["ppl"]:
+        import grpc
         from ppl_server_utils import llm_pb2, llm_pb2_grpc
         
         channel = grpc.insecure_channel(server_url)
@@ -32,7 +32,7 @@ def check_server_status(server_url: str, backend: str, model: str = "") -> str:
         except Exception:
             return "NOT READY"
         
-    elif backend in "vllm":
+    elif backend in ["vllm"]:
         assert model != "", "Model name is required for vllm backend"
         if not server_url.startswith("http://"):
             server_url = "http://" + server_url
@@ -67,6 +67,44 @@ def check_server_status(server_url: str, backend: str, model: str = "") -> str:
             return "NOT READY"
         
         return "OK"
+    
+    elif backend in ["lightllm"]:
+        if not server_url.startswith("http://"):
+            server_url = "http://" + server_url
+        if not server_url.endswith("/generate_stream"):
+            server_url = server_url + "/generate_stream"
+        payload = {
+            "inputs": "Check server status",
+            "parameters": {
+                "ignore_eos": True,
+                "max_new_tokens": 1,
+                "min_new_tokens": 1,
+                "temperature": 0.0,
+                "frequency_penalty": 1,
+        }
+        }
+        headers = {
+            "Content-Type": "application/json",
+        }
+        try:
+            with requests.post(url=server_url, json=payload,
+                            headers=headers, stream=True,
+                            timeout=6 * 60 * 60) as response:
+                if response.status_code == 200:
+                    for chunk in response.iter_lines():
+                        chunk = chunk.strip()
+                        if not chunk:
+                            continue
+                        chunk = chunk.decode("utf-8")
+                else:
+                    return "NOT READY"
+
+        except Exception:
+            return "NOT READY"
+        
+        return "OK"
+    else:
+        raise ValueError(f"Unsupported backend: {backend}")
 
     
     

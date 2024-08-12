@@ -31,6 +31,8 @@ if [ "$BACKEND" == "vllm" ]; then
     bash "$PERF_BASE_PATH/../vllm/api_bench/benchmark_server_templ_cuda.sh" "$MODEL_SIZE" "$TP_SIZE" "$MODE"
 elif [ "$BACKEND" == "ppl" ]; then
     bash "$PERF_BASE_PATH/../ppl_llm/api_bench/benchmark_server_templ_cuda.sh" "$MODEL_SIZE" "$TP_SIZE" "$MODE"
+elif [ "$BACKEND" == "lightllm" ]; then
+    bash "$PERF_BASE_PATH/../lightllm/api_bench/benchmark_server_templ_cuda.sh" "$MODEL_SIZE" "$TP_SIZE" "$MODE"
 else
     echo "Unsupported backend: $BACKEND"
     exit 1

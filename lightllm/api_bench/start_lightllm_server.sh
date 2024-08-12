@@ -46,7 +46,7 @@ CMD="nohup python -m lightllm.server.api_server \
 --host $LIGHTLLM_SERVER_HOST \
 --port $LIGHTLLM_SERVER_PORT \
 --tp $TP_SIZE \
---max_total_token_num 120000 \
+--max_total_token_num 30000 \
 --tokenizer_mode fast \
 >> ${PERF_BASE_PATH}/log/server_lightllm.log 2>&1 &"
 
@@ -55,6 +55,7 @@ CMD="nohup python -m lightllm.server.api_server \
 echo "SERVER STARTING: MODEL${MODEL_SIZE}B TP${TP_SIZE} HOST${HOST} PORT${PORT} -> $CMD"
 INFO "SERVER STARTING: MODEL${MODEL_SIZE}B TP${TP_SIZE} HOST${HOST} PORT${PORT} -> $CMD"
 
+echo "${CMD}" >> "${PERF_BASE_PATH}/log/server_lightllm.log"
 eval "$CMD"
 
 SERVER_PID=$!

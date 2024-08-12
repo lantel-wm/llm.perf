@@ -213,7 +213,7 @@ def request_ppl_completions(request_func_input: RequestFuncInput) -> RequestFunc
 
 # curl -X POST 127.0.0.1:8000/v2/models/ensemble/generate_stream -d \
 #'{"text_input": "What is ML?", "max_tokens": 500, "bad_words": "", "stop_words": "", "pad_id": 2, "end_id": -1, "stream": true}'
-def request_trt_llm(
+def request_trtllm_generate_stream(
     request_func_input: RequestFuncInput,
 ) -> RequestFuncOutput:
     api_url = request_func_input.api_url
@@ -283,12 +283,89 @@ def request_trt_llm(
     return output
 
 
+# curl http://127.0.0.1:8080/generate_stream -X POST -d '{"inputs":"What is AI?","parameters":{"max_new_tokens":17, "frequency_penalty":1}}' -H 'Content-Type: application/json'
+def request_lightllm_generate_stream(
+    request_func_input: RequestFuncInput,
+) -> RequestFuncOutput:
+    api_url = request_func_input.api_url
+    assert api_url.endswith("generate_stream")
+    assert not request_func_input.use_beam_search
+    assert request_func_input.best_of == 1
+    
+    payload = {
+        "inputs": request_func_input.prompt,
+        "parameters": {
+            "ignore_eos": True,
+            "max_new_tokens": request_func_input.output_len,
+            "min_new_tokens": request_func_input.output_len,
+            "temperature": 0.0,
+            "frequency_penalty": 1,
+        }
+    }
+    headers = {
+        "Content-Type": "application/json",
+    }
+    output = RequestFuncOutput(
+        thread_id=request_func_input.thread_id,
+        request_id=request_func_input.request_id,
+        prompt_len=request_func_input.prompt_len
+    )
+
+    generated_text = ""
+    output_len = 0
+    ttft = 0.0
+    st = time.perf_counter()
+    most_recent_timestamp = st
+    # data:{"token": {"id": 29897, "text": ")", "logprob": -0.06751319020986557, "special": false, "count_output_tokens": 17, "prompt_tokens": 6}, "generated_text": null, "finished": true, "finish_reason": "length", "details": null}
+    try:
+        with requests.post(url=api_url, json=payload, headers=headers,
+                           stream=True, timeout=HTTP_TIMEOUT) as response:
+            if response.status_code == 200:
+                for chunk_bytes in response.iter_lines():
+                    chunk_bytes = chunk_bytes.strip()
+                    if not chunk_bytes:
+                        continue
+                    chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data:")
+                    
+                    data = json.loads(chunk)
+                    generated_text += data["token"]["text"]
+                    timestamp = time.perf_counter()
+                    # First token
+                    if ttft == 0.0:
+                        ttft = time.perf_counter() - st
+                        output.ttft = ttft
+                        
+                    # Decoding phase
+                    else:
+                        output.itl.append(timestamp - most_recent_timestamp)
+
+                    most_recent_timestamp = timestamp
+                    
+                    if data["finished"]:
+                        output_len = data["token"]["count_output_tokens"]
+
+                output.generated_text = generated_text
+                output.output_len = output_len
+                output.success = True
+                output.latency = most_recent_timestamp - st
+            else:
+                output.success = False
+                output.error = f"HTTP Status Code: {response.status_code}\nresponse.reason: {response.reason}"
+
+    except Exception:
+        output.success = False
+        exc_info = sys.exc_info()
+        output.error = "".join(traceback.format_exception(*exc_info))
+
+    return output
+
                     
 
 REQUEST_FUNCS = {
     "vllm": request_openai_completions,
     "ppl": request_ppl_completions,
-    "trt": request_trt_llm,
+    "trtllm": request_trtllm_generate_stream,
+    "lightllm": request_lightllm_generate_stream,
 }
 
 if __name__ == '__main__':
