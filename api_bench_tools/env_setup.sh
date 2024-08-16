@@ -1,8 +1,5 @@
 #!/bin/bash
 
-SCRIPT=$(realpath -s "$0")
-PERF_BASE_PATH=$(dirname "$SCRIPT")
-
 # 测试参数，根据测试用例随时进行更改
 # export BACKEND="vllm"
 # export BACKEND="ppl"
