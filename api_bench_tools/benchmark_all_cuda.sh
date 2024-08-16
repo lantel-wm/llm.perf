@@ -2,11 +2,7 @@
 
 SCRIPT=$(realpath -s "$0")
 PERF_BASE_PATH=$(dirname "$SCRIPT")
-BACKEND=$1
-
-if [ -z "$BACKEND" ]; then
-    BACKEND="vllm"
-fi
+BACKEND_=$BACKEND
 
 function unittest() {
     MODEL_SIZE=$1
@@ -18,9 +14,9 @@ function unittest() {
     STOP_TIME=$7
     MODE=$8
 
-    echo "[BENCHMARK ${MODEL_SIZE}B TP${GPUS} TURNS$TURNS CLIENTS$CLIENTS RAMP_UP_TIME$RAMP_UP_TIME STOP_TIME$STOP_TIME ${MODE^^}]"
-    INFO "[BENCHMARK ${MODEL_SIZE}B TP${GPUS} TURNS$TURNS CLIENTS$CLIENTS RAMP_UP_TIME$RAMP_UP_TIME STOP_TIME$STOP_TIME ${MODE^^}]"
-    RES=$(bash "$PERF_BASE_PATH/benchmark_one_cuda_${MODE}.sh" "${MODEL_SIZE}" "${GPUS}" "${PROMPTS}" "${TURNS}" "${CLIENTS}" "${RAMP_UP_TIME}" "${STOP_TIME}" "${BACKEND}" | grep "CSV format output")
+    echo "[BENCHMARK ${MODEL_SIZE}B TP${GPUS} TURNS$TURNS CLIENTS$CLIENTS RAMP_UP_TIME$RAMP_UP_TIME STOP_TIME$STOP_TIME ${MODE^^} BACKEND$BACKEND_]"
+    INFO "[BENCHMARK ${MODEL_SIZE}B TP${GPUS} TURNS$TURNS CLIENTS$CLIENTS RAMP_UP_TIME$RAMP_UP_TIME STOP_TIME$STOP_TIME ${MODE^^} BACKEND$BACKEND_]"
+    RES=$(bash "$PERF_BASE_PATH/benchmark_one_cuda_${MODE}.sh" "${MODEL_SIZE}" "${GPUS}" "${PROMPTS}" "${TURNS}" "${CLIENTS}" "${RAMP_UP_TIME}" "${STOP_TIME}" "${BACKEND_}" | grep "CSV format output")
     RES=${RES##*:}
 
     if [ -z "$RES" ]; then
@@ -28,7 +24,7 @@ function unittest() {
     else
         echo "[OK] $RES"
         INFO "[OK] $RES"
-        echo "$MODEL_SIZE,$GPUS,$CLIENTS,$MODE,$RES" >> "$PERF_BASE_PATH/result/benchmark_${BACKEND}_all_cuda_result.csv"
+        echo "$MODEL_SIZE,$GPUS,$CLIENTS,$MODE,$RES" >> "$PERF_BASE_PATH/result/benchmark_${BACKEND_}_all_cuda_result.csv"
     fi
 }
 
@@ -74,7 +70,7 @@ create_log "$BACKEND"
 
 # _NUM_CLIENTS_LIST=(16 32 64 128 256 512)
 # _NUM_CLIENTS_LIST=(1 5 10 20 30 40 50 60 70 80 100)
-_NUM_CLIENTS_LIST=(10 20 30 40 50 100 200 300)
+_NUM_CLIENTS_LIST=(1 5 10 20 30 40 50 100 200 300)
 # _NUM_CLIENTS_LIST=(60)
 # _NUM_TURNS_LIST=(1 2 4 8 16)
 _NUM_TURNS_LIST=(1)

@@ -12,8 +12,8 @@ export TP_SIZE=4
 export MODE="fp16"
 
 # 脚本路径、数据集路径、模型路径、服务地址等
-export BENCHMARK_LLM="$PERF_BASE_PATH/python/benchmark_serving_num_clients.py"
-export DATASET_PATH="$PERF_BASE_PATH/datasets/samples_1024.json"
+export BENCHMARK_LLM="/mnt/nvme0n1/workspace/zhaozhiyu/work/llm-bench/gitlab/llm.perf/api_bench_tools/python/benchmark_serving_num_clients.py"
+export DATASET_PATH="/mnt/nvme0n1/workspace/zhaozhiyu/work/llm-bench/gitlab/llm.perf/api_bench_tools/datasets/samples_1024.json"
 export OPMX_MODEL_PATH="/mnt/llm/LLaMA/test/opmx_models"
 export HF_MODEL_PATH="/mnt/llm2/llm_perf/hf_models"
 export VLLM_SERVER_URL="http://127.0.0.1:8000"

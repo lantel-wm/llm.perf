@@ -62,23 +62,35 @@ MODEL_DIR="${HF_MODEL_PATH}/llama-${MODEL_SIZE}b-hf"
 
 
 if [ -z "$BENCHMARK_LLM" ]; then
-    BENCHMARK_LLM="$PERF_BASE_PATH/python/benchmark_serving_num_clients.py"
+    # BENCHMARK_LLM="$PERF_BASE_PATH/python/benchmark_serving_num_clients.py"
+    echo "[ERROR] Please set BENCHMARK_LLM"
+    ERROR "Please set BENCHMARK_LLM"
+    exit 1
 fi
 
 if [ -z "$DATASET_PATH" ]; then
     # DATASET_PATH="$PERF_BASE_PATH/datasets/ShareGPT_V3_unfiltered_cleaned_split.json"
-    DATASET_PATH="$PERF_BASE_PATH/datasets/samples_1024.json"
+    # DATASET_PATH="$PERF_BASE_PATH/datasets/samples_1024.json"
+    echo "[ERROR] Please set DATASET_PATH"
+    ERROR "Please set DATASET_PATH"
+    exit 1
 fi
 
 if [ -z "$SERVER_URL" ];then
     if [ "$BACKEND" = "vllm" ]; then
-        SERVER_URL="127.0.0.1:8000"
+        SERVER_URL="${VLLM_SERVER_URL}"
     elif [ "$BACKEND" = "ppl" ]; then
-        SERVER_URL="127.0.0.1:23333"
+        SERVER_URL="${PPL_SERVER_URL}"
+    elif [ "$BACKEND" = "lightllm" ]; then
+        SERVER_URL="${LIGHTLLM_SERVER_URL}"
+    else
+        echo "[ERROR] Please set SERVER_URL"
+        ERROR "Please set SERVER_URL"
+        exit 1
     fi
 fi
 
-CMD="python ${BENCHMARK_LLM} \
+CMD="python $BENCHMARK_LLM \
 --base-url $SERVER_URL \
 --backend $BACKEND \
 --model $MODEL_DIR \
