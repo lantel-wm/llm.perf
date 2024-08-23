@@ -418,6 +418,7 @@ def main(args: argparse.Namespace):
         num_turns=args.num_turns,
         tokenizer=tokenizer,
         fixed_output_len=args.sharegpt_output_len,
+        system_prompt_path=args.system_prompt_path,
     ) 
     
     # start benchmark
