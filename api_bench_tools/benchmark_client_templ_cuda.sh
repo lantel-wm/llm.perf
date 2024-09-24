@@ -83,6 +83,8 @@ if [ -z "$SERVER_URL" ];then
         SERVER_URL="${PPL_SERVER_URL}"
     elif [ "$BACKEND" = "lightllm" ]; then
         SERVER_URL="${LIGHTLLM_SERVER_URL}"
+    elif [ "$BACKEND" = "amsv2" ]; then
+        SERVER_URL="${AMSV2_SERVER_URL}"
     else
         echo "[ERROR] Please set SERVER_URL"
         ERROR "Please set SERVER_URL"
@@ -94,12 +96,14 @@ CMD="python $BENCHMARK_LLM \
 --base-url $SERVER_URL \
 --backend $BACKEND \
 --model $MODEL_DIR \
+--tokenizer $BENCHMARK_TOKENIZER_PATH \
 --dataset-path $DATASET_PATH \
 --num-requests $PROMPTS \
 --num-turns $TURNS \
 --num-threads $CLIENTS \
 --ramp-up-time $RAMP_UP_TIME \
---thread-stop-time $STOP_TIME"
+--thread-stop-time $STOP_TIME \
+$BENCHMARK_EXTENDED_OPTIONS"
 
 echo "BENCH MODEL${MODEL_SIZE}B TP${TP_SIZE} CLIENTS${CLIENTS} -> $CMD"
 INFO "BENCH MODEL${MODEL_SIZE}B TP${TP_SIZE} CLIENTS${CLIENTS} -> $CMD"

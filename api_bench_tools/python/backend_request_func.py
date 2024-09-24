@@ -22,6 +22,7 @@ HTTP_TIMEOUT = 6 * 60 * 60
 class RequestFuncInput:
     prompt: str
     api_url: str
+    api_key: Optional[str]
     prompt_len: int
     output_len: int
     model: str
@@ -362,6 +363,99 @@ def request_lightllm_generate_stream(
     return output
 
 
+# curl --location 'https://devsft.studio.sensecoreapi.cn/gpu8-sensechat590-20240719/text-generation/generate_stream' \
+# --header 'Content-Type: application/json' \
+# --header 'Authorization: Bearer eyJhbGciOiJFUzI1NiIsImtpZCI6ImNiMTY1YTA1LWY1ZTctNDkzYS1hNjMwLTcyOTM3YmE1YTM0ZiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMzcxNjgzMTEsImlhdCI6MTcyMTYzNTUxMSwiaXNzIjoiaHR0cHM6Ly9pYW0taW50ZXJuYWwuc2Vuc2Vjb3JlYXBpLmNuLyIsImp0aSI6IjQ1YmYzMWE4LTdmZjItNDM5OC04NmMwLTQwMDg5ZjU0M2M3NiIsInJlc291cmNlX2lkIjoiZDkxN2JkYmQtNDViMC0xMWVmLTkwMjktM2U2NDkxYjJlNmY1Iiwic3ViIjoiNjMwZmI3MTI2MWViNjgxMjAwMjNmZTY1YWNjNWFiNDgiLCJ1cmkiOiJkZXZzZnQuc3R1ZGlvLnNlbnNlY29yZWFwaS5jbi9ncHU4LXNlbnNlY2hhdDU5MC0yMDI0MDcxOSJ9.4Dt712ONtlKHVcCTv9AVpCBLTo0osDXHHqIzzDsIsLTU1rGKqsjBQaW4xPKM-pIGbVoSb1KzyO1T4gTFSU6Xgw' \
+# --data '{
+#       "inputs": "Who are you?",
+#       "parameters": {
+#           "do_sample": true,
+#           "max_new_tokens": 100,
+#           "repetition_penalty": 1.1,
+#           "temperature": 0.8,
+#           "top_k": 50,
+#           "top_p": 0.7
+#       }
+#   }'
+def request_amsv2_generate_stream(
+    request_func_input: RequestFuncInput,
+) -> RequestFuncOutput:
+    api_url = request_func_input.api_url
+    assert api_url.endswith("generate_stream")
+    api_key = request_func_input.api_key
+    if api_key is None:
+        api_key = 'eyJhbGciOiJFUzI1NiIsImtpZCI6ImNiMTY1YTA1LWY1ZTctNDkzYS1hNjMwLTcyOTM3YmE1YTM0ZiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMzcxNjgzMTEsImlhdCI6MTcyMTYzNTUxMSwiaXNzIjoiaHR0cHM6Ly9pYW0taW50ZXJuYWwuc2Vuc2Vjb3JlYXBpLmNuLyIsImp0aSI6IjQ1YmYzMWE4LTdmZjItNDM5OC04NmMwLTQwMDg5ZjU0M2M3NiIsInJlc291cmNlX2lkIjoiZDkxN2JkYmQtNDViMC0xMWVmLTkwMjktM2U2NDkxYjJlNmY1Iiwic3ViIjoiNjMwZmI3MTI2MWViNjgxMjAwMjNmZTY1YWNjNWFiNDgiLCJ1cmkiOiJkZXZzZnQuc3R1ZGlvLnNlbnNlY29yZWFwaS5jbi9ncHU4LXNlbnNlY2hhdDU5MC0yMDI0MDcxOSJ9.4Dt712ONtlKHVcCTv9AVpCBLTo0osDXHHqIzzDsIsLTU1rGKqsjBQaW4xPKM-pIGbVoSb1KzyO1T4gTFSU6Xgw'
+    
+    payload = {
+        "inputs": request_func_input.prompt,
+        "parameters": {
+            "do_sample": True,
+            "max_new_tokens": request_func_input.output_len,
+            "repetition_penalty": 1.1,
+            "temperature": 0.8,
+            "top_k": 50,
+            "top_p": 0.7,
+        },
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+        
+    output = RequestFuncOutput(
+        thread_id=request_func_input.thread_id,
+        request_id=request_func_input.request_id,
+        prompt_len=request_func_input.prompt_len
+    )
+
+    generated_text = ""
+    output_len = 0
+    ttft = 0.0
+    st = time.perf_counter()
+    most_recent_timestamp = st
+    # data:{"token": {"id": 29897, "text": ")", "logprob": -0.06751319020986557, "special": false, "count_output_tokens": 17, "prompt_tokens": 6}, "generated_text": null, "finished": true, "finish_reason": "length", "details": null}
+    try:
+        with requests.post(url=api_url, json=payload, headers=headers,
+                           stream=True, timeout=HTTP_TIMEOUT) as response:
+            if response.status_code == 200:
+                for chunk_bytes in response.iter_lines():
+                    chunk_bytes = chunk_bytes.strip()
+                    if not chunk_bytes:
+                        continue
+                    chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data:")
+                    
+                    data = json.loads(chunk)
+                    generated_text += data["generated_text"]
+                    timestamp = time.perf_counter()
+                    # First token
+                    if ttft == 0.0:
+                        ttft = time.perf_counter() - st
+                        output.ttft = ttft
+                        
+                    # Decoding phase
+                    else:
+                        output.itl.append(timestamp - most_recent_timestamp)
+
+                    most_recent_timestamp = timestamp
+                    
+                    if data.get("details") is not None:
+                        output_len = data["details"]["generated_tokens"]
+
+                output.generated_text = generated_text
+                output.output_len = output_len
+                output.success = True
+                output.latency = most_recent_timestamp - st
+            else:
+                output.success = False
+                output.error = f"HTTP Status Code: {response.status_code}\nresponse.reason: {response.reason}"
+
+    except Exception:
+        output.success = False
+        exc_info = sys.exc_info()
+        output.error = "".join(traceback.format_exception(*exc_info))
+
+    return output
+
 def get_tokenizer(
     pretrained_model_name_or_path: str, trust_remote_code: bool
 ) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast]:
@@ -375,6 +469,7 @@ REQUEST_FUNCS = {
     "ppl": request_ppl_completions,
     "trtllm": request_trtllm_generate_stream,
     "lightllm": request_lightllm_generate_stream,
+    "amsv2": request_amsv2_generate_stream,
 }
 
 if __name__ == '__main__':
@@ -384,18 +479,22 @@ if __name__ == '__main__':
     os.environ["HTTPS_PROXY"] = ""
     os.environ["https_proxy"] = ""
     request_func_input = RequestFuncInput(
-        prompt="The future of AI is",
-        # api_url="127.0.0.1:23333",
-        api_url="http://10.198.31.25:8000/v1/completions",
+        prompt="The future of ai is",
+        api_url="127.0.0.1:23333",
+        # api_url="http://10.198.31.25:8000/v1/completions",
+        # api_url='https://devsft.studio.sensecoreapi.cn/gpu8-sensechat590-20240719/text-generation/generate_stream',
+        # api_key='eyJhbGciOiJFUzI1NiIsImtpZCI6ImNiMTY1YTA1LWY1ZTctNDkzYS1hNjMwLTcyOTM3YmE1YTM0ZiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMzcxNjgzMTEsImlhdCI6MTcyMTYzNTUxMSwiaXNzIjoiaHR0cHM6Ly9pYW0taW50ZXJuYWwuc2Vuc2Vjb3JlYXBpLmNuLyIsImp0aSI6IjQ1YmYzMWE4LTdmZjItNDM5OC04NmMwLTQwMDg5ZjU0M2M3NiIsInJlc291cmNlX2lkIjoiZDkxN2JkYmQtNDViMC0xMWVmLTkwMjktM2U2NDkxYjJlNmY1Iiwic3ViIjoiNjMwZmI3MTI2MWViNjgxMjAwMjNmZTY1YWNjNWFiNDgiLCJ1cmkiOiJkZXZzZnQuc3R1ZGlvLnNlbnNlY29yZWFwaS5jbi9ncHU4LXNlbnNlY2hhdDU5MC0yMDI0MDcxOSJ9.4Dt712ONtlKHVcCTv9AVpCBLTo0osDXHHqIzzDsIsLTU1rGKqsjBQaW4xPKM-pIGbVoSb1KzyO1T4gTFSU6Xgw',
         prompt_len=150,
         output_len=300,
-        model="/mnt/llm2/llm_perf/hf_models/llama-7b-hf",
+        # model="/mnt/llm2/llm_perf/hf_models/llama-7b-hf",
         thread_id=0,
         request_id=0,
         num_requests=1024,
     )
     
-    output = request_openai_completions(request_func_input)
+    # output = request_openai_completions(request_func_input)
+    # output = request_amsv2_generate_stream(request_func_input)
+    output = request_ppl_completions(request_func_input)
     print(f"output.success: {output.success}")
     print(f"output.generated_text: {output.generated_text}")
     print(f"output.prompt_len: {output.prompt_len}")
