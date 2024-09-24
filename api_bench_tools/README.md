@@ -52,7 +52,7 @@
 
 - `E2E_TIME`：End to end time（Lantency），从请求发送到接收到最后一个token的时间间隔。每个线程的每个请求都有一个E2E_TIME值，指标计算了所有请求的E2E_TIME的max，min，mean，median，std，p90，p99。
 
-- `ITL`：Inter token latency，两个相邻输出token之间的时间间隔。每个输出token有一个ITL值，指标计算了所有ITL的max，min，mean，median，std，p90，p99。ITL和TPOT的区别在于ITL的统计粒度为token，而TPOT的统计粒度为请求。
+- `ITL`：Inter token latency，两个相邻输出token之间的时间间隔。每个输出token都有一个ITL值，指标计算了所有ITL的max，min，mean，median，std，p90，p99。ITL和TPOT的区别在于ITL的统计粒度为token，且第一个输出token的ITL即为首字延迟；而TPOT的统计粒度为请求。
 
 **注意**：
 

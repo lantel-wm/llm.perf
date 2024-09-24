@@ -539,6 +539,87 @@ def request_amsv2_generate_stream(
 
     return output
 
+# curl http://localhost:30000/generate -H "Content-Type: application/json" -d '{"text": "Once upon a time,", "sampling_params": {"max_new_tokens": 16, "temperature": 0}, "stream": true}'
+def request_sglang_generate(
+    request_func_input: RequestFuncInput,
+) -> RequestFuncOutput:
+    api_url = request_func_input.api_url
+    assert api_url.endswith(
+        "/generate"
+    ), "SGLang Generate API URL must end with '/generate'."
+
+    assert not request_func_input.use_beam_search
+    payload = {
+        "text": request_func_input.prompt,
+        "sampling_params": {
+            "max_new_tokens": request_func_input.output_len,
+            "temperature": 0,
+            "ignore_eos": True,
+        },
+        "stream": True,
+    }
+    headers = {
+        "Content-Type": "application/json",
+    }
+    
+    output = RequestFuncOutput(
+        thread_id=request_func_input.thread_id, 
+        request_id=request_func_input.request_id,
+        prompt_len=request_func_input.prompt_len,
+    )
+
+    generated_text = ""
+    output_len = 0
+    ttft = 0.0
+    st = time.perf_counter()
+    most_recent_timestamp = st
+    try:
+        with requests.post(url=api_url, json=payload, 
+                           headers=headers, stream=True,
+                           timeout=HTTP_TIMEOUT) as response:
+            if response.status_code == 200:
+                for chunk_bytes in response.iter_lines():
+                    chunk_bytes = chunk_bytes.strip()
+                    if not chunk_bytes:
+                        continue
+                    chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data: ")
+                    
+                    if chunk == "[DONE]":
+                        latency = time.perf_counter() - st
+                    else:
+                        data = json.loads(chunk)
+                        
+                        if data["meta_info"]["completion_tokens"] >= 1:
+                            timestamp = time.perf_counter()
+                            # First token
+                            if ttft == 0.0:
+                                ttft = time.perf_counter() - st
+                                output.ttft = ttft
+                                
+                            # Decoding phase
+                            elif data["meta_info"]["completion_tokens"] >= 2:
+                                output.itl.append(timestamp - most_recent_timestamp)
+
+                            most_recent_timestamp = timestamp
+                            generated_text = data["text"]
+                            output_len += 1
+
+                output.generated_text = generated_text
+                output.output_len = output_len
+                output.success = True
+                output.latency = latency
+            else:
+                output.success = False
+                output.error = f"HTTP Status Code: {response.status_code}\nresponse.text: {response.text}"
+
+    except Exception:
+        output.success = False
+        exc_info = sys.exc_info()
+        output.error = "".join(traceback.format_exception(*exc_info))
+
+    return output
+
+
 def get_tokenizer(
     pretrained_model_name_or_path: str, trust_remote_code: bool
 ) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast]:
@@ -553,6 +634,7 @@ REQUEST_FUNCS = {
     "trtllm": request_trtllm_generate_stream,
     "lightllm": request_lightllm_generate_stream,
     "amsv2": request_amsv2_generate_stream,
+    "sglang": request_sglang_generate,
 }
 
 if __name__ == '__main__':
@@ -578,6 +660,7 @@ if __name__ == '__main__':
     # output = request_openai_completions(request_func_input)
     # output = request_amsv2_generate_stream(request_func_input)
     output = request_ppl_completions(request_func_input)
+    output = request_sglang_generate(request_func_input)
     print(f"output.success: {output.success}")
     print(f"output.generated_text: {output.generated_text}")
     print(f"output.prompt_len: {output.prompt_len}")

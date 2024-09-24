@@ -85,6 +85,8 @@ if [ -z "$SERVER_URL" ];then
         SERVER_URL="${LIGHTLLM_SERVER_URL}"
     elif [ "$BACKEND" = "amsv2" ]; then
         SERVER_URL="${AMSV2_SERVER_URL}"
+    elif [ "$BACKEND" = "sglang" ]; then
+        SERVER_URL="${SGLANG_SERVER_URL}"
     else
         echo "[ERROR] Please set SERVER_URL"
         ERROR "Please set SERVER_URL"

@@ -474,6 +474,7 @@ def main(args: argparse.Namespace):
     logging.debug(args)
     assert args.num_requests > 0, "Number of threads must be greater than 0."
     
+    backend = args.backend
     model_id = args.model
     tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
 
