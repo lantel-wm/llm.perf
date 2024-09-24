@@ -64,12 +64,16 @@
 
 ## 前置准备
 
-配置python环境：
+配置测试脚本的python环境：
 ```shell
 conda creante -n perf python=3.11
 conda activate perf
 pip install -r requirements.txt
 ```
+
+配置server环境：
+
+
 
 下载数据集：
 
@@ -123,12 +127,7 @@ export AMSV2_API_KEY="eyJhbGciOiJFUzI1NiIsImtpZCI6ImNiMTY1YTA1LWY1ZTctNDkzYS1hNj
 $ source env_setup.sh
 ```
 
-启动server
-
-```shell
-$ bash ./start_server.sh
-SERVER STARTED 27250
-```
+启动对应的server：[server启动命令](README_SERVER.md)
 
 启动测试脚本
 
@@ -138,29 +137,12 @@ $ bash benchmark_all_cuda.sh
 
 测试完成后，关闭server
 
-```shell
-$ kill -9 27250
-```
-
 结果保存在`result/`中，历史结果会自动归档在`result/$date`目录中。
 
 需要修改推理后端、数据集、服务器url等参数时,修改env_setup.sh的相应内容，然后重新执行`source env_setup.sh`。
 
-若使用`bash ./start_server.sh`启动不成功，可以手动启动相应的server。命令如下：
+**注意**：`env_setup.sh`中的`MODEL_SIZE`，`TP_SIZE`，`MODE`仅起标识作用，设置这些参数不会改变server的启动设置（server的启动设置仅由命令行参数决定）。请手动保证env_setup.sh中的`MODEL_SIZE`，`TP_SIZE`，`MODE`与server的启动设置一致。
 
-```shell
-# vLLM
-# 需要修改--model和-tp
-python -m vllm.entrypoints.openai.api_server --model /mnt/llm2/llm_perf/hf_models/llama-7b-hf --swap-space 16 --disable-log-requests --enforce-eager --host 127.0.0.1 --port 8000 -tp 1
-
-# ppl ./ppl_llm_server在ppl.llm.serving/ppl-build目录
-# 需要修改--model-dir、--model-param-path、--tokenizer-path、--tensor-parallel-size
-./ppl_llm_server --model-dir /mnt/llm/llm_perf/opmx_models/llama_65b_8gpu --model-param-path /mnt/llm/llm_perf/opmx_models/llama_65b_8gpu/params.json --tokenizer-path /mnt/llm/llm_perf/hf_models/llama-65b-hf/tokenizer.model --tensor-parallel-size 8 --top-p 0.0 --top-k 1 --max-tokens-scale 0.94 --max-input-tokens-per-request 4096 --max-output-tokens-per-request 4096 --max-total-tokens-per-request 8192 --max-running-batch 1024 --max-tokens-per-step 8192 --host 127.0.0.1 --port 23333
-
-# lightllm
-# 需要修改--model-dir、--tp
-python -m lightllm.server.api_server --model_dir /mnt/llm2/llm_perf/hf_models/llama-7b-hf --host 127.0.0.1 --port 8080 --tp 1 --max_total_token_num 150000 --tokenizer_mode fast
-```
 
 ## 使用Python测试单个case
 
@@ -192,3 +174,5 @@ $ python python/benchmark_serving_num_clients.py --base-url YOUR_SERVER_URL --ba
 
 **注意：** 推理服务需要支持Stream模式，即逐token返回生成结果，否则无法测试动态性能。
 
+curl http://localhost:30000/generate -H "Content-Type: application/json" -d '{"text": "Once upon a time,", "sampling_params": {"max_new_tokens": 16, "temperature": 0}, 
+"stream": true}'
