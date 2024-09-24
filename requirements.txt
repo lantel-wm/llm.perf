@@ -1,0 +1,10 @@
+aiohttp==3.10.5
+grpcio==1.66.1
+huggingface_hub==0.25.1
+numpy==2.1.1
+openai==1.47.1
+protobuf==5.27.2
+Requests==2.32.3
+torch==2.4.1
+tqdm==4.66.5
+transformers==4.44.2

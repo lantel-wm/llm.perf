@@ -1,27 +1,3 @@
-"""Benchmark online serving throughput.
-
-On the server side, run one of the following commands:
-    vLLM OpenAI API server
-    vllm serve <your_model> \
-        --swap-space 16 \
-        --disable-log-requests
-
-    (TGI backend)
-    ./launch_tgi_server.sh <your_model> <max_batch_total_tokens>
-
-On the client side, run:
-    python benchmarks/benchmark_serving.py \
-        --backend <backend> \
-        --model <your_model> \
-        --dataset-name sharegpt \
-        --dataset-path <path to dataset> \
-        --request-rate <request_rate> \ # By default <request_rate> is inf
-        --num-prompts <num_requests> # By default <num_requests> is 1000
-
-    when using tgi backend, add
-        --endpoint /generate_stream
-    to the end of the command above.
-"""
 import argparse
 import asyncio
 import logging

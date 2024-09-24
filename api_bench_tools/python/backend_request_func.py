@@ -10,8 +10,6 @@ from typing import List, Optional, Union
 from transformers import (AutoTokenizer, PreTrainedTokenizer,
                           PreTrainedTokenizerFast)
 
-from ppl_server_utils import llm_pb2, llm_pb2_grpc
-
 logging.basicConfig(level=logging.WARNING,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S')
@@ -141,8 +139,10 @@ def request_openai_completions(
 
     return output
 
-def request_ppl_completions(request_func_input: RequestFuncInput) -> RequestFuncOutput:
+def request_ppl_completions_old(request_func_input: RequestFuncInput) -> RequestFuncOutput:
     import grpc
+    from ppl_server_utils import llm_pb2, llm_pb2_grpc
+    
     api_url = request_func_input.api_url
     channel = grpc.insecure_channel(api_url)
     stub = llm_pb2_grpc.LLMServiceStub(channel)
@@ -155,6 +155,89 @@ def request_ppl_completions(request_func_input: RequestFuncInput) -> RequestFunc
         id=thread_id * num_requests + request_id,
         prompt=request_func_input.prompt,
         temperature=0.0,
+        stopping_parameters=llm_pb2.StoppingCriteriaParameters(
+            max_new_tokens=request_func_input.output_len,
+            ignore_eos_token=True
+        )
+    )
+    batched_request = llm_pb2.BatchedRequest(req=[request])
+    
+    output = RequestFuncOutput(
+        thread_id=request_func_input.thread_id, 
+        request_id=request_func_input.request_id,
+        prompt_len=request_func_input.prompt_len
+    )
+    
+    generated_text = ""
+    output_len = 0
+    ttft = 0.0
+    st = time.perf_counter()
+    most_recent_timestamp = st
+    
+    try:
+        response_stream = stub.Generation(batched_request)
+        for response in response_stream:
+            for rsp in response.rsp:
+                if rsp.status == llm_pb2.Status.FAILED:
+                    logging.warning(f"Request {request.id} failed")
+                    output.success = False
+                    output.error = "Response Status: FAILED"
+                    break
+                
+                else:
+                    if rsp.generated:
+                        timestamp = time.perf_counter()
+                        if ttft == 0.0:
+                            ttft = time.perf_counter() - st
+                            output.ttft = ttft
+                        else:
+                            output.itl.append(timestamp - most_recent_timestamp)
+                        
+                        most_recent_timestamp = timestamp
+                        generated_text += rsp.generated
+                        output_len += 1
+                        
+                    if rsp.status == llm_pb2.Status.FINISHED:
+                        logging.info(f"Request {request.id} finished")
+                        latency = time.perf_counter() - st
+                        output.success = True
+                        break
+        
+        output.generated_text = generated_text
+        output.output_len = output_len
+        output.latency = latency
+                       
+    except Exception:
+        output.success = False
+        exc_info = sys.exc_info()
+        output.error = "".join(traceback.format_exception(*exc_info))
+        
+    return output
+
+def request_ppl_completions(request_func_input: RequestFuncInput) -> RequestFuncOutput:
+    import grpc
+    from ppl_server_utils import llm_pb2, llm_pb2_grpc
+    
+    api_url = request_func_input.api_url
+    channel = grpc.insecure_channel(api_url)
+    stub = llm_pb2_grpc.LLMServiceStub(channel)
+    
+    thread_id = request_func_input.thread_id
+    request_id = request_func_input.request_id
+    num_requests = request_func_input.num_requests
+    
+    choose_NextToken_parameters=llm_pb2.NextTokenChooserParameters(
+        temperature=0.8,
+        top_k=40,
+        top_p=0.7,
+        do_sample=True,
+        repetition_penalty=1.05
+    )
+    
+    request = llm_pb2.Request(
+        id=thread_id * num_requests + request_id,
+        prompt=request_func_input.prompt,
+        choosing_parameters=choose_NextToken_parameters,
         stopping_parameters=llm_pb2.StoppingCriteriaParameters(
             max_new_tokens=request_func_input.output_len,
             ignore_eos_token=True
@@ -456,6 +539,87 @@ def request_amsv2_generate_stream(
 
     return output
 
+# curl http://localhost:30000/generate -H "Content-Type: application/json" -d '{"text": "Once upon a time,", "sampling_params": {"max_new_tokens": 16, "temperature": 0}, "stream": true}'
+def request_sglang_generate(
+    request_func_input: RequestFuncInput,
+) -> RequestFuncOutput:
+    api_url = request_func_input.api_url
+    assert api_url.endswith(
+        "/generate"
+    ), "SGLang Generate API URL must end with '/generate'."
+
+    assert not request_func_input.use_beam_search
+    payload = {
+        "text": request_func_input.prompt,
+        "sampling_params": {
+            "max_new_tokens": request_func_input.output_len,
+            "temperature": 0,
+            "ignore_eos": True,
+        },
+        "stream": True,
+    }
+    headers = {
+        "Content-Type": "application/json",
+    }
+    
+    output = RequestFuncOutput(
+        thread_id=request_func_input.thread_id, 
+        request_id=request_func_input.request_id,
+        prompt_len=request_func_input.prompt_len,
+    )
+
+    generated_text = ""
+    output_len = 0
+    ttft = 0.0
+    st = time.perf_counter()
+    most_recent_timestamp = st
+    try:
+        with requests.post(url=api_url, json=payload, 
+                           headers=headers, stream=True,
+                           timeout=HTTP_TIMEOUT) as response:
+            if response.status_code == 200:
+                for chunk_bytes in response.iter_lines():
+                    chunk_bytes = chunk_bytes.strip()
+                    if not chunk_bytes:
+                        continue
+                    chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data: ")
+                    
+                    if chunk == "[DONE]":
+                        latency = time.perf_counter() - st
+                    else:
+                        data = json.loads(chunk)
+                        
+                        if data["meta_info"]["completion_tokens"] >= 1:
+                            timestamp = time.perf_counter()
+                            # First token
+                            if ttft == 0.0:
+                                ttft = time.perf_counter() - st
+                                output.ttft = ttft
+                                
+                            # Decoding phase
+                            elif data["meta_info"]["completion_tokens"] >= 2:
+                                output.itl.append(timestamp - most_recent_timestamp)
+
+                            most_recent_timestamp = timestamp
+                            generated_text = data["text"]
+                            output_len += 1
+
+                output.generated_text = generated_text
+                output.output_len = output_len
+                output.success = True
+                output.latency = latency
+            else:
+                output.success = False
+                output.error = f"HTTP Status Code: {response.status_code}\nresponse.text: {response.text}"
+
+    except Exception:
+        output.success = False
+        exc_info = sys.exc_info()
+        output.error = "".join(traceback.format_exception(*exc_info))
+
+    return output
+
+
 def get_tokenizer(
     pretrained_model_name_or_path: str, trust_remote_code: bool
 ) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast]:
@@ -470,6 +634,7 @@ REQUEST_FUNCS = {
     "trtllm": request_trtllm_generate_stream,
     "lightllm": request_lightllm_generate_stream,
     "amsv2": request_amsv2_generate_stream,
+    "sglang": request_sglang_generate,
 }
 
 if __name__ == '__main__':
@@ -495,6 +660,7 @@ if __name__ == '__main__':
     # output = request_openai_completions(request_func_input)
     # output = request_amsv2_generate_stream(request_func_input)
     output = request_ppl_completions(request_func_input)
+    output = request_sglang_generate(request_func_input)
     print(f"output.success: {output.success}")
     print(f"output.generated_text: {output.generated_text}")
     print(f"output.prompt_len: {output.prompt_len}")
@@ -502,3 +668,5 @@ if __name__ == '__main__':
     print(f"output.latency: {output.latency}")
     print(f"output.ttft: {output.ttft}")
     print(f"output.error: {output.error}")
+    
+    
