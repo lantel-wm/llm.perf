@@ -58,6 +58,10 @@ if [ -z "$HF_MODEL_PATH" ]; then
     exit 1
 fi
 
+if [ -z "$DATASET" ]; then
+    DATASET="sharegpt"
+fi
+
 MODEL_DIR="${HF_MODEL_PATH}/llama-${MODEL_SIZE}b-hf"
 
 
@@ -68,13 +72,6 @@ if [ -z "$BENCHMARK_LLM" ]; then
     exit 1
 fi
 
-if [ -z "$DATASET_PATH" ]; then
-    # DATASET_PATH="$PERF_BASE_PATH/datasets/ShareGPT_V3_unfiltered_cleaned_split.json"
-    # DATASET_PATH="$PERF_BASE_PATH/datasets/samples_1024.json"
-    echo "[ERROR] Please set DATASET_PATH"
-    ERROR "Please set DATASET_PATH"
-    exit 1
-fi
 
 if [ -z "$SERVER_URL" ];then
     if [ "$BACKEND" = "vllm" ]; then
@@ -94,11 +91,25 @@ if [ -z "$SERVER_URL" ];then
     fi
 fi
 
+
+if [ "$DATASET" = "sharegpt" ]; then
+    DATASET_PATH="$SHAREGPT_DATASET_PATH"
+elif [ "$DATASET" = "xiaomi" ]; then
+    DATASET_PATH="$XIAOMI_DATASET_PATH"
+else
+    echo "[ERROR] unknown dataset $DATASET"
+fi
+
+INFO "Using $DATASET dataset, dataset path: $DATASET_PATH"
+INFO "sharegpe data path: $SHAREGPT_DATASET_PATH"
+INFO "xiaomi data path: $XIAOMI_DATASET_PATH"
+
 CMD="python $BENCHMARK_LLM \
 --base-url $SERVER_URL \
 --backend $BACKEND \
 --model $MODEL_DIR \
 --tokenizer $BENCHMARK_TOKENIZER_PATH \
+--dataset $DATASET \
 --dataset-path $DATASET_PATH \
 --num-requests $PROMPTS \
 --num-turns $TURNS \

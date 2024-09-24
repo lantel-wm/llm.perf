@@ -10,12 +10,15 @@ export MODEL_SIZE=7
 export TP_SIZE=1
 export MODE="fp16"
 export ENABLE_SYSTEM_PROMPT=0
+export DATASET="sharegpt"
+# export DATASET="xiaomi"
 
 
 # benchmark_serving_num_clients.py 脚本路径
 export BENCHMARK_LLM="/mnt/llm/workspace/zhaozhiyu/work/llm.perf/api_bench_tools/python/benchmark_serving_num_clients.py"
 # 数据集路径
-export DATASET_PATH="/mnt/llm/workspace/zhaozhiyu/work/llm.perf/api_bench_tools/datasets/samples_1024.json"
+export SHAREGPT_DATASET_PATH="/mnt/llm/workspace/zhaozhiyu/work/llm.perf/api_bench_tools/datasets/samples_1024.json"
+export XIAOMI_DATASET_PATH="/mnt/llm/workspace/zhaozhiyu/work/llm.perf/api_bench_tools/datasets/xiaomi_data1_medium.jsonl"
 # 系统提示词路径
 export SYSTEM_PROMPT_PATH="/mnt/llm/workspace/zhaozhiyu/work/llm.perf/api_bench_tools/datasets/system_prompt_sample.txt"
 # benchmark tokenizer路径
