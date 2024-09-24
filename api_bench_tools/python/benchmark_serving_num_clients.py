@@ -249,15 +249,18 @@ def dump_metrics_and_results(
     metrics: BenchmarkMetrics, 
 ):
     print("CSV header output:\
-success_rate,qps,avg_inlen,avg_outlen,max_inlen,max_outlen,o_tps,io_tps,\
+completed,success_rate,qps,total_inlen,total_outlen,avg_inlen,avg_outlen,max_inlen,max_outlen,o_tps,io_tps,\
 min_ttft,max_ttft,mean_ttft,median_ttft,std_ttft,p90_ttft,p99_ttft,\
 min_tpot,max_tpot,mean_tpot,median_tpot,std_tpot,p90_tpot,p99_tpot,\
 min_e2e,max_e2e,mean_e2e,median_e2e,std_e2e,p90_e2e,p99_e2e,\
 min_itl,max_itl,mean_itl,median_itl,std_itl,p90_itl,p99_itl")
           
     csv_line = ""
+    csv_line += f"{metrics.completed},"
     csv_line += f"{metrics.successful_rate:.3f},"
     csv_line += f"{metrics.request_throughput:.3f},"
+    csv_line += f"{metrics.total_input},"
+    csv_line += f"{metrics.total_output},"
     csv_line += f"{metrics.mean_input_tokens:.3f},"
     csv_line += f"{metrics.mean_output_tokens:.3f},"
     csv_line += f"{metrics.max_input_tokens},"
@@ -307,6 +310,7 @@ def benchmark(
     input_requests: List[Tuple[str, int, int]],
     best_of: int,
     use_beam_search: bool,
+    api_key: Optional[str] = None,
     thread_id: int = -1,
     num_requests: int = -1,
 ):
@@ -328,6 +332,7 @@ def benchmark(
             model=model_id,
             prompt=prompt,
             api_url=api_url,
+            api_key=api_key,
             prompt_len=prompt_len,
             output_len=output_len,
             best_of=best_of,
@@ -343,13 +348,14 @@ def benchmark(
 
 
 class benchThread(threading.Thread):
-    def __init__(self, thread_id, ramp_up_time, backend, api_url, model_id, tokenizer, input_requests,
+    def __init__(self, thread_id, ramp_up_time, backend, api_url, api_key, model_id, tokenizer, input_requests,
                  best_of, use_beam_search, num_requests):
         super(benchThread, self).__init__()
         self.thread_id = thread_id
         self.ramp_up_time = ramp_up_time
         self.backend = backend
         self.api_url = api_url
+        self.api_key = api_key
         self.model_id = model_id
         self.tokenizer = tokenizer
         self.input_requests = input_requests
@@ -362,6 +368,7 @@ class benchThread(threading.Thread):
         self.outputs = benchmark(
                 backend=self.backend,
                 api_url=self.api_url,
+                api_key=self.api_key,
                 model_id=self.model_id,
                 input_requests=self.input_requests,
                 best_of=self.best_of,
@@ -408,6 +415,17 @@ def main(args: argparse.Namespace):
         if not api_url.endswith("/v2/models/ensemble/generate_stream"):
             api_url = f"{api_url}/v2/models/ensemble/generate_stream"
         logging.debug(f"using trt backend with api url: {api_url}")
+    elif backend in ["amsv2"]:
+        api_url = args.base_url
+        if not api_url.startswith("http"):
+            api_url = f"http://{api_url}"
+        if not api_url.endswith("/text-generation/generate_stream"):
+            api_url = f"{api_url}/text-generation/generate_stream"
+        logging.debug(f"using amsv2 backend with api url: {api_url}")
+    else:
+        raise ValueError(f"Unknown backend: {backend}")
+    
+    api_key = args.api_key if args.api_key is not None else os.environ.get("AMSV2_API_KEY")
     
     tokenizer = get_tokenizer(tokenizer_id, trust_remote_code=args.trust_remote_code)
 
@@ -430,7 +448,7 @@ def main(args: argparse.Namespace):
         if thread_id % 2 == 1:
             input_requests_i = input_requests_i[::-1]
         input_requests_list.append(input_requests_i)
-        thread = benchThread(thread_id, thread_id * args.ramp_up_time / args.num_threads, backend, api_url, model_id, tokenizer, input_requests_i,
+        thread = benchThread(thread_id, thread_id * args.ramp_up_time / args.num_threads, backend, api_url, api_key, model_id, tokenizer, input_requests_i,
                                 args.best_of, args.use_beam_search, args.num_requests)
         thread.start()
         threads.append(thread)
@@ -470,6 +488,12 @@ if __name__ == "__main__":
         default=None,
         required=True,
         help="Server or API base url if not using http host and port.",
+    )
+    parser.add_argument(
+        "--api-key",
+        type=str,
+        default=None,
+        help="API key if not using http basic auth.",
     )
     parser.add_argument(
         "--endpoint",
