@@ -64,6 +64,13 @@
 
 ## 前置准备
 
+配置python环境：
+```shell
+conda creante -n perf python=3.11
+conda activate perf
+pip install -r requirements.txt
+```
+
 下载数据集：
 
 ```shell

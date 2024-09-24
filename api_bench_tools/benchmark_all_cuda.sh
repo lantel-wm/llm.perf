@@ -61,7 +61,7 @@ function unittest() {
 source "$PERF_BASE_PATH/logging.sh"
 create_log "$BACKEND"
 
-_NUM_CLIENTS_LIST=(1 5 10 20 30 40 50 100 200 300)
+_NUM_CLIENTS_LIST=(100 1 5 10 20 30 40 50 100 200 300)
 _NUM_TURNS_LIST=(1)
 
 if [ -z "$MODEL_SIZE" ]; then
