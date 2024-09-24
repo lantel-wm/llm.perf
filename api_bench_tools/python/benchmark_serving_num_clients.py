@@ -1,21 +1,3 @@
-"""Benchmark online serving throughput.
-
-On the server side, run one of the following commands:
-    vLLM OpenAI API server
-    python -m vllm.entrypoints.openai.api_server \
-        --model <your_model> --swap-space 16 \
-        --disable-log-requests
-
-    (TGI backend)
-    ./launch_tgi_server.sh <your_model> <max_batch_total_tokens>
-
-On the client side, run:
-    python benchmarks/benchmark_serving.py \
-        --backend <backend> \
-        --model <your_model> \
-        --dataset-path <path to dataset> \
-        --num-prompts <num_prompts> # By default <num_prompts> is 1000
-"""
 import argparse
 import threading
 import json
@@ -31,11 +13,7 @@ from typing import AsyncGenerator, List, Optional, Tuple
 import numpy as np
 from backend_request_func import (REQUEST_FUNCS, RequestFuncInput, RequestFuncOutput)
 from transformers import PreTrainedTokenizerBase
-
-try:
-    from vllm.transformers_utils.tokenizer import get_tokenizer
-except ImportError:
-    from backend_request_func import get_tokenizer
+from backend_request_func import get_tokenizer
 
 logging.basicConfig(level=logging.WARNING,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -97,6 +75,22 @@ def sample_sharegpt_requests(
     fixed_output_len: Optional[int] = None,
     system_prompt_path: Optional[str] = None,
 ) -> List[Tuple[str, int, int]]:
+    """sample sharegpt format dataset to requests.
+
+    Args:
+        dataset_path (str): path to the dataset.
+        num_requests (int): number of requests to sample.
+        num_turns (int): number of conversation turns in each request. One turn is a prompt and a completion.
+        tokenizer (PreTrainedTokenizerBase): transformers tokenizer
+        fixed_output_len (Optional[int], optional): Fixed output length can be set. Defaults to None.
+        system_prompt_path (Optional[str], optional): System prompt path. Defaults to None.
+
+    Raises:
+        ValueError: output_len too small
+
+    Returns:
+        List[Tuple[str, int, int]]: filtered dataset, each element is a tuple of (prompt, input_len, output_len)
+    """
     # print("[I] Sampling requests...")
     if fixed_output_len is not None and fixed_output_len < 4:
         raise ValueError("output_len too small")
@@ -150,13 +144,6 @@ def sample_sharegpt_requests(
     return filtered_dataset
 
 
-# def get_request(
-#     input_requests: List[Tuple[str, int, int]],
-# ):
-#     input_requests = iter(input_requests)
-#     for request_id, request in enumerate(input_requests):
-#         yield request_id, request
-
 
 def calculate_metrics(
     input_requests_list: List[List[Tuple[str, int, int]]],
@@ -164,6 +151,17 @@ def calculate_metrics(
     dur_s: float,
     tokenizer: PreTrainedTokenizerBase,
 ) -> Tuple[BenchmarkMetrics, List[int]]:
+    """Calculate benchmark metrics.
+
+    Args:
+        input_requests_list (List[List[Tuple[str, int, int]]]): List of input requests, each element is a list of tuples of (prompt, input_len, output_len)
+        outputs (List[RequestFuncOutput]): List of outputs, each element is a RequestFuncOutput
+        dur_s (float): Duration of the benchmark in seconds
+        tokenizer (PreTrainedTokenizerBase): transformers tokenizer
+
+    Returns:
+        Tuple[BenchmarkMetrics, List[int]]: BenchmarkMetrics and List of actual output lengths
+    """
     actual_output_lens = []
     total_input_tokens = 0
     max_input_tokens = 0
@@ -179,6 +177,7 @@ def calculate_metrics(
             actual_output_lens.append(output_len)
             thread_id = outputs[i].thread_id
             request_id = outputs[i].request_id
+            # input_request is aranged in shape (num_threads, num_requests_per_thread)
             input_request = input_requests_list[thread_id][request_id]
             total_input_tokens += input_request[1]
             max_input_tokens = max(max_input_tokens, input_request[1])
@@ -248,6 +247,11 @@ def calculate_metrics(
 def dump_metrics_and_results(
     metrics: BenchmarkMetrics, 
 ):
+    """Dumps metrics and results to stdout in CSV format.
+
+    Args:
+        metrics (BenchmarkMetrics): Metrics to dump.
+    """
     print("CSV header output:\
 completed,success_rate,qps,total_inlen,total_outlen,avg_inlen,avg_outlen,max_inlen,max_outlen,o_tps,io_tps,\
 min_ttft,max_ttft,mean_ttft,median_ttft,std_ttft,p90_ttft,p99_ttft,\
@@ -314,6 +318,25 @@ def benchmark(
     thread_id: int = -1,
     num_requests: int = -1,
 ):
+    """Benchmark main function, called from each thread.
+
+    Args:
+        backend (str): Backend inference framework. Could be "vllm", "lightllm", "sglang" or "ppl". Defaults to "vllm".
+        api_url (str): api url of the inference server.
+        model_id (str): model id of the inference server, used by vllm.
+        input_requests (List[Tuple[str, int, int]]): List of (prompt, prompt_len, output_len) tuples.
+        best_of (int): Sampling param.
+        use_beam_search (bool): Sampling param.
+        api_key (Optional[str], optional): api key. Defaults to None.
+        thread_id (int, optional): thread id. Defaults to -1.
+        num_requests (int, optional): number of requests to send. Defaults to -1.
+
+    Raises:
+        ValueError: Unknown backend.
+
+    Returns:
+        List[RequestFuncOutput]: List of outputs.
+    """
     if backend in REQUEST_FUNCS:
         request_func = REQUEST_FUNCS.get(backend)
     else:
@@ -348,6 +371,8 @@ def benchmark(
 
 
 class benchThread(threading.Thread):
+    """Thread class for benchmarking. Each thread simulates a client sending requests to the server.
+    """
     def __init__(self, thread_id, ramp_up_time, backend, api_url, api_key, model_id, tokenizer, input_requests,
                  best_of, use_beam_search, num_requests):
         super(benchThread, self).__init__()
@@ -382,48 +407,77 @@ class benchThread(threading.Thread):
         return self.outputs
 
 def roll(lst: list, n: int):
+    """roll a list by n positions
+
+    Args:
+        lst (list): list to roll
+        n (int): number of positions to roll
+
+    Returns:
+        List: rolled list
+    """
     n = n % len(lst)
     return lst[n:] + lst[:n]
-    
 
-def main(args: argparse.Namespace):
-    # unset http proxy
-    os.environ["http_proxy"] = ""
-    os.environ["HTTP_PROXY"] = ""
-    os.environ["HTTPS_PROXY"] = ""
-    os.environ["https_proxy"] = ""
-    # print(args)
-    logging.debug(args)
-    assert args.num_requests > 0, "Number of threads must be greater than 0."
-    
-    backend = args.backend
-    model_id = args.model
-    tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
 
+def api_url_standardize(base_url: str, endpoint: str, backend: str) -> str:
+    """standardize api url
+
+    Args:
+        api_url (str): api url
+
+    Returns:
+        str: standardized api url
+    """
     if backend in ["vllm", "openai"]:
-        api_url = f"{args.base_url}{args.endpoint}"
+        api_url = f"{base_url}{endpoint}"
         if not api_url.startswith("http"):
             api_url = f"http://{api_url}"
         logging.debug(f"using vllm backend with api url: {api_url}")
     elif backend in ["ppl"]:
-        api_url = args.base_url
+        api_url = base_url
         logging.debug(f"using ppl backend with api url: {api_url}")
     elif backend in ["trt"]:
-        api_url = args.base_url
+        api_url = base_url
         if not api_url.startswith("http"):
             api_url = f"http://{api_url}"
         if not api_url.endswith("/v2/models/ensemble/generate_stream"):
             api_url = f"{api_url}/v2/models/ensemble/generate_stream"
         logging.debug(f"using trt backend with api url: {api_url}")
     elif backend in ["amsv2"]:
-        api_url = args.base_url
+        api_url = base_url
         if not api_url.startswith("http"):
             api_url = f"http://{api_url}"
         if not api_url.endswith("/text-generation/generate_stream"):
             api_url = f"{api_url}/text-generation/generate_stream"
         logging.debug(f"using amsv2 backend with api url: {api_url}")
+    elif backend in ["sglang"]:
+        api_url = base_url
+        if not api_url.startswith("http"):
+            api_url = f"http://{api_url}"
+        if not api_url.endswith("/generate"):
+            api_url = f"{api_url}/generate"
+        logging.debug(f"using sglang backend with api url: {api_url}")
     else:
         raise ValueError(f"Unknown backend: {backend}")
+    
+    return api_url
+
+
+def main(args: argparse.Namespace):
+    # unset proxy
+    os.environ["http_proxy"] = ""
+    os.environ["HTTP_PROXY"] = ""
+    os.environ["HTTPS_PROXY"] = ""
+    os.environ["https_proxy"] = ""
+    
+    logging.debug(args)
+    assert args.num_requests > 0, "Number of threads must be greater than 0."
+    
+    model_id = args.model
+    tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
+
+    api_url = api_url_standardize(args.base_url, args.endpoint, args.backend)
     
     api_key = args.api_key if args.api_key is not None else os.environ.get("AMSV2_API_KEY")
     
@@ -442,6 +496,8 @@ def main(args: argparse.Namespace):
     # start benchmark
     benchmark_start_time = time.perf_counter()
     threads = []
+    # input_requests_list is a list of length num_threads, each element is a list of input requests
+    # e.g.: input_requests_list[thread_id][request_id] refers to the request_id-th request in the thread_id-th thread
     input_requests_list = []
     for thread_id in range(args.num_threads):
         input_requests_i = input_requests[thread_id:] + input_requests[:thread_id]
