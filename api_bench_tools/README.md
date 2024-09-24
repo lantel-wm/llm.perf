@@ -48,17 +48,17 @@
 
 - `TTFT`： Time to fist token，首字延迟，从请求发送到接收到第一个token的时间间隔。每个线程的每个请求都有一个TTFT值，指标计算了所有请求的TTFT的max，min，mean，median，std，p90，p99。
 
-- `TPOT`：Time per output token，每个输出token的延迟。每个线程的每个请求都有一个TPOT值，计算公式为：输出token数 / (latency - TTFT)，指标计算了所有请求的TPOT的max，min，mean，median，std，p90，p99。
+- `TPOT`：Time per output token，每个输出token的延迟。每个线程的每个请求都有一个TPOT值，计算公式为：(latency - TTFT) / 输出token数，指标计算了所有请求的TPOT的max，min，mean，median，std，p90，p99。
 
 - `E2E_TIME`：End to end time（Lantency），从请求发送到接收到最后一个token的时间间隔。每个线程的每个请求都有一个E2E_TIME值，指标计算了所有请求的E2E_TIME的max，min，mean，median，std，p90，p99。
 
-- `ITL`：Inter token latency，每个token之间的时间间隔。每个输出token都有一个ITL值，指标计算了所有ITL的max，min，mean，median，std，p90，p99。ITL和TPOT的区别在于ITL的统计粒度为token，而TPOT的统计粒度为请求。
+- `ITL`：Inter token latency，两个相邻输出token之间的时间间隔。每个输出token有一个ITL值，指标计算了所有ITL的max，min，mean，median，std，p90，p99。ITL和TPOT的区别在于ITL的统计粒度为token，而TPOT的统计粒度为请求。
 
-    **注意**：
+**注意**：
 
-    统计输入token数需要用到tokenizer将prompt文本转为tokens，由于server对测试脚本为黑盒状态，测试脚本无法得知server使用的tokenizer。因此测试脚本使用固定的tokenizer，以保证不同模型、不同推理后端所测的输入token数一致。由于测试使用的tokenizer可能不是正确的tokenizer，因此测得的`total_inlen`，`avg_inlen`，`mean_inlen`，`max_inlen`，`io_tps`，可能不准确，仅供测试结果之间进行对比，其绝对值不具有参考价值。
+统计输入token数需要用到tokenizer将prompt文本转为tokens，由于server对测试脚本为黑盒状态，测试脚本无法得知server使用的tokenizer。因此测试脚本使用固定的tokenizer，以保证不同模型、不同推理后端所测的输入token数一致。由于测试使用的tokenizer可能不是正确的tokenizer，因此测得的`total_inlen`，`avg_inlen`，`mean_inlen`，`max_inlen`，`io_tps`，可能不准确，仅供测试结果之间进行对比，其绝对值不具有参考价值。
 
-    输出token数不存在这个问题，输出token数的统计是通过记录server返回的token数量直接计算，不涉及tokenizer，即`total_outlen`，`avg_outlen`，`mean_outlen`，`max_outlen`，`o_tps`是准确的。
+输出token数不存在这个问题，输出token数的统计是通过记录server返回的token数量直接计算，不涉及tokenizer，即`total_outlen`，`avg_outlen`，`mean_outlen`，`max_outlen`，`o_tps`是准确的。
 
 
 
@@ -71,7 +71,7 @@ conda activate perf
 pip install -r requirements.txt
 ```
 
-配置server环境：
+配置server环境：[README_SERVER.md](README_SERVER.md)
 
 
 
@@ -127,7 +127,7 @@ export AMSV2_API_KEY="eyJhbGciOiJFUzI1NiIsImtpZCI6ImNiMTY1YTA1LWY1ZTctNDkzYS1hNj
 $ source env_setup.sh
 ```
 
-启动对应的server：[server启动命令](README_SERVER.md)
+启动对应的server：[README_SERVER.md](README_SERVER.md)
 
 启动测试脚本
 
@@ -139,20 +139,29 @@ $ bash benchmark_all_cuda.sh
 
 结果保存在`result/`中，历史结果会自动归档在`result/$date`目录中。
 
-需要修改推理后端、数据集、服务器url等参数时,修改env_setup.sh的相应内容，然后重新执行`source env_setup.sh`。
+需要修改推理后端、数据集、服务器url等参数时，修改`env_setup.sh`的相应内容，然后重新执行`source env_setup.sh`。
 
-**注意**：`env_setup.sh`中的`MODEL_SIZE`，`TP_SIZE`，`MODE`仅起标识作用，设置这些参数不会改变server的启动设置（server的启动设置仅由命令行参数决定）。请手动保证env_setup.sh中的`MODEL_SIZE`，`TP_SIZE`，`MODE`与server的启动设置一致。
+**注意**：`env_setup.sh`中的`MODEL_SIZE`，`TP_SIZE`，`MODE`仅起标识作用，设置这些参数不会改变server的启动设置，server的启动设置仅由命令行参数决定。请手动保证`env_setup.sh`中的`MODEL_SIZE`，`TP_SIZE`，`MODE`与server的启动设置一致。
 
 
 ## 使用Python测试单个case
 
 `benchmark_all_cuda.sh`调用了`python/benchmark_serving_num_clients.py`，如果想测试单个测试用例，或者想debug，可以直接运行`benchmark_serving_num_clients.py`，步骤如下：
 
-1.手动启动对应的server
+1.启动对应的server
 
 2.启动 client，开始benchmark：
 ```shell
-$ python python/benchmark_serving_num_clients.py --base-url YOUR_SERVER_URL --backend vllm --model PATH_TO_HF_MODEL --dataset-path datasets/samples_1024.json --num-requests 1024 --num-turns 1 --num-threads 100 --ramp-up-time 10 --thread-stop-time 300 
+$ python python/benchmark_serving_num_clients.py \
+--base-url YOUR_SERVER_URL \
+--backend vllm \
+--model PATH_TO_HF_MODEL \
+--dataset-path datasets/samples_1024.json \
+--num-requests 1024 \
+--num-turns 1 \ 
+--num-threads 100 \ 
+--ramp-up-time 10 \ 
+--thread-stop-time 300 
 ```
 
 ## 添加新的测试后端
@@ -161,8 +170,8 @@ $ python python/benchmark_serving_num_clients.py --base-url YOUR_SERVER_URL --ba
 
 目前的请求函数的通信协议有两种：
 
-- http：vllm，lightllm，可以使用curl命令向server发送请求
-- grpc：ppl，无法使用curl命令向server发送请求
+- http：vllm，lightllm，sglang使用http server，可以使用curl命令向server发送请求
+- grpc：ppl使用grpc server，无法使用curl命令向server发送请求
 
 对于http协议的server，可以参照`python/backend_request_func.py`中的`request_openai_completions`函数，实现自己的请求函数。
 
@@ -173,6 +182,3 @@ $ python python/benchmark_serving_num_clients.py --base-url YOUR_SERVER_URL --ba
 为了避免随机性，需要保证server返回固定的长度。常用的方法是将`ignore_eos`设为`True`，将`max_new_tokens`设为想要输出的长度。如果server没有类似的参数，需要自己想办法控制输出的长度。
 
 **注意：** 推理服务需要支持Stream模式，即逐token返回生成结果，否则无法测试动态性能。
-
-curl http://localhost:30000/generate -H "Content-Type: application/json" -d '{"text": "Once upon a time,", "sampling_params": {"max_new_tokens": 16, "temperature": 0}, 
-"stream": true}'
