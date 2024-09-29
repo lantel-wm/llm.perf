@@ -19,6 +19,24 @@ function unittest() {
     fi
 }
 
+function unittest_loop() {
+    MODEL_SIZE=$1
+    GPUS=$2
+    local -n BATCH_LIST=$3
+    INLEN=$4
+    OUTLEN=$5
+    MODE=$6
+    for BATCH_SIZE in ${BATCH_LIST[@]}; do
+        unittest $MODEL_SIZE $GPUS $BATCH_SIZE $INLEN $OUTLEN $MODE
+        if [ $? -ne 0 ]; then
+            echo "[INFO] break at batch $BATCH_SIZE"
+            break
+        fi
+    done
+}
+
+# example: unittest_loop 7 1 _I256O512_BATCH_SIZE_LIST 256 512 $MODE
+
 echo "model_size(B),tp,batch,inlen,outlen,mode,generate(ms),prefill(ms),decode(ms),step(ms),prefill_tps,decode_tps,o_tps,io_tps,mem(gib)" > $PERF_BASE_PATH/benchmark_all_cuda_result.csv
 
 _MODE_LIST=(fp16)
