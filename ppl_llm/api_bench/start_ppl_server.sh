@@ -50,7 +50,7 @@ MODEL_DIR="${OPMX_MODEL_PATH}/${MODEL_SIZE}B_db1_fq1_fk1_ff1_ac1_qc1_cm0_cl3_${T
 TOKENIZER_PATH="${HF_MODEL_PATH}/llama-${MODEL_SIZE}b-hf/tokenizer.model"
 
 
-CMD="nohup ${PPL_SERVER_PATH} \
+CMD="NCCL_PROTO=^Simple nohup ${PPL_SERVER_PATH} \
 --model-dir ${MODEL_DIR} \
 --model-param-path ${MODEL_DIR}/params.json \
 --tokenizer-path ${TOKENIZER_PATH} \

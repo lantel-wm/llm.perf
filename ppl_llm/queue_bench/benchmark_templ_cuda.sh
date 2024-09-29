@@ -37,7 +37,7 @@ MODEL_PARAM_PATH="$PERF_BASE_PATH/../opmx_models/llama_${MODEL_SIZE}b_${TP_SIZE}
 WARMUP_LOOPS=2
 BENCHMARK_LOOPS=1
 
-CMD="${BENCHMARK_LLM} \
+CMD="NCCL_PROTO=^Simple ${BENCHMARK_LLM} \
 --model-dir $MODEL_DIR \
 --model-param-path $MODEL_PARAM_PATH \
 --tensor-parallel-size $TP_SIZE \
