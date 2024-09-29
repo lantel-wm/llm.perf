@@ -39,7 +39,7 @@ function create_log() {
 
     echo "[INFO] benchmark_all_cuda.sh started at $(date +"%Y%m%d%H%M%S")" > "$LOG_DIR"
 
-    echo "model_size(B),tp,num_clients,mode,success_rate,qps,avg_inlen,avg_outlen,max_inlen,max_outlen,o_tps,io_tps,\
+    echo "model_size(B),tp,num_clients,mode,completed,success_rate,qps,total_inlen,total_outlen,avg_inlen,avg_outlen,max_inlen,max_outlen,o_tps,io_tps,\
 min_ttft,max_ttft,mean_ttft,median_ttft,std_ttft,p90_ttft,p99_ttft,\
 min_tpot,max_tpot,mean_tpot,median_tpot,std_tpot,p90_tpot,p99_tpot,\
 min_e2e,max_e2e,mean_e2e,median_e2e,std_e2e,p90_e2e,p99_e2e,\
