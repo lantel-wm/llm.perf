@@ -227,11 +227,11 @@ def request_ppl_completions(request_func_input: RequestFuncInput) -> RequestFunc
     num_requests = request_func_input.num_requests
     
     choose_NextToken_parameters=llm_pb2.NextTokenChooserParameters(
-        temperature=0.8,
-        top_k=40,
-        top_p=0.7,
-        do_sample=True,
-        repetition_penalty=1.05
+        temperature=0.0,
+        top_k=1,
+        top_p=0.0,
+        do_sample=False,
+        repetition_penalty=1.0
     )
     
     request = llm_pb2.Request(
