@@ -30,21 +30,28 @@ function create_log() {
     fi
 
     
-    if [ -f "$PERF_BASE_PATH/result/benchmark_${BACKEND_}_all_cuda_result.csv" ]; then
+    if [ -f "$PERF_BASE_PATH/result/benchmark_config.sh" ]; then
         mkdir -p "$PERF_BASE_PATH/result/${log_date}"
-        mv "$PERF_BASE_PATH/result/benchmark_${BACKEND_}_all_cuda_result.csv" "$PERF_BASE_PATH/result/${log_date}"
-        mv "$PERF_BASE_PATH/result/env_setup.sh" "$PERF_BASE_PATH/result/${log_date}"
+        mv "$PERF_BASE_PATH/result/"*.csv "$PERF_BASE_PATH/result/${log_date}"
+        mv "$PERF_BASE_PATH/result/benchmark_config.sh" "$PERF_BASE_PATH/result/${log_date}"
         cp "$PERF_BASE_PATH/log/benchmark_all_cuda_${log_date}.log" "$PERF_BASE_PATH/result/${log_date}"
     fi
 
     echo "[INFO] benchmark_all_cuda.sh started at $(date +"%Y%m%d%H%M%S")" > "$LOG_DIR"
 
+    DATASET_=$DATASET
+    if [ "$ENABLE_SYSTEM_PROMPT" == 1 ]; then
+        DATASET_="${DATASET}-system-prompt"
+    fi
+
+    export BENCHMARK_RESULT_PATH="$PERF_BASE_PATH/result/benchmark_${BACKEND_}_${DATASET_}_${MODEL_TAG}_result.csv"
+
     echo "model_tag,num_clients,completed,success_rate,qps,total_inlen,total_outlen,avg_inlen,avg_outlen,max_inlen,max_outlen,o_tps,io_tps,\
 min_ttft,max_ttft,mean_ttft,median_ttft,std_ttft,p90_ttft,p99_ttft,\
 min_tpot,max_tpot,mean_tpot,median_tpot,std_tpot,p90_tpot,p99_tpot,\
 min_e2e,max_e2e,mean_e2e,median_e2e,std_e2e,p90_e2e,p99_e2e,\
-min_itl,max_itl,mean_itl,median_itl,std_itl,p90_itl,p99_itl" > "$PERF_BASE_PATH/result/benchmark_${BACKEND_}_all_cuda_result.csv"
-    cp "$PERF_BASE_PATH/env_setup.sh" "$PERF_BASE_PATH/result"
+min_itl,max_itl,mean_itl,median_itl,std_itl,p90_itl,p99_itl" > "$BENCHMARK_RESULT_PATH"
+    cp "$PERF_BASE_PATH/benchmark_config.sh" "$PERF_BASE_PATH/result"
 }
 
 function INFO() {

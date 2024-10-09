@@ -3,7 +3,7 @@
 SCRIPT=$(realpath -s "$0")
 PERF_BASE_PATH=$(dirname "$SCRIPT")
 
-source "$PERF_BASE_PATH/env_setup.sh"
+source "$PERF_BASE_PATH/benchmark_config.sh"
 BACKEND_=$BACKEND
 
 source "$PERF_BASE_PATH/logging.sh"
@@ -13,7 +13,7 @@ _NUM_CLIENTS_LIST=(1 5 10 20 30 40 50 100 200 300)
 _NUM_TURNS_LIST=(1)
 
 if [ -z "$MODEL_TAG" ]; then
-    echo "set MODEL_TAG in env_setup.sh first!"
+    echo "set MODEL_TAG in benchmark_config.sh first!"
     exit 1
 fi
 
@@ -43,7 +43,7 @@ function unittest() {
     else
         echo "[OK] $RES"
         INFO "[OK] $RES"
-        echo "$MODEL_TAG,$CLIENTS,$RES" >> "$PERF_BASE_PATH/result/benchmark_${BACKEND_}_all_cuda_result.csv"
+        echo "$MODEL_TAG,$CLIENTS,$RES" >> "$BENCHMARK_RESULT_PATH"
     fi
 }
 

@@ -222,7 +222,6 @@ def request_ppl_completions_old(
 
 def request_ppl_completions(
         request_func_input: RequestFuncInput,
-        logger: logging.Logger,
     ) -> RequestFuncOutput:
     logger = logging.getLogger()
     import grpc

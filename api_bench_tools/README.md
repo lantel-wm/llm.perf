@@ -1,6 +1,87 @@
 # api_bench_tools
 
-## 脚本说明
+## 前置准备
+
+1.配置测试脚本的python环境：
+```shell
+$ conda create -n perf python=3.11
+$ conda activate perf
+$ pip install -r requirements.txt
+```
+
+2.配置server环境：[README_SERVER.md](README_SERVER.md)
+
+3.修改`benchmark_config.sh`
+
+## 测试启动
+
+1.在`benchmark_config.sh`中设置以下参数：
+- `BACKEND`
+- `MODEL_TAG`
+- `ENABLE_SYSTEM_PROMPT`
+- `DATASET`
+
+2.启动`BACKEND`对应的server：[README_SERVER.md](README_SERVER.md)
+
+3.启动测试脚本
+
+```shell
+$ bash benchmark_all_cuda.sh
+```
+
+4.测试完成后，关闭server
+
+## 测试结果
+
+- 测试结果保存在`result/`目录中，历史结果会自动归档在`result/$date`目录中。
+
+- 如果需要修改推理后端、数据集、服务器url等参数，请修改`benchmark_config.sh`的相应内容即可。
+
+## 注意事项
+
+- `benchmark_config.sh`中的`MODEL_TAG`仅起标识作用，与server的启动设置无关。请保证`MODEL_TAG`与server的实际设置相对应。
+
+
+## 使用Python测试单个case
+
+`benchmark_all_cuda.sh`调用了`python/benchmark_serving_num_clients.py`，如果想测试单个测试用例或者debug，可以运行`benchmark_serving_num_clients.py`，步骤如下：
+
+1.启动对应的server
+
+2.启动 client，开始benchmark：
+```shell
+$ python python/benchmark_serving_num_clients.py \
+--base-url YOUR_SERVER_URL \
+--backend vllm \
+--model PATH_TO_HF_MODEL \
+--dataset-path datasets/samples_1024.json \
+--num-requests 1024 \
+--num-turns 1 \ 
+--num-threads 100 \ 
+--ramp-up-time 10 \ 
+--thread-stop-time 300
+```
+
+## 添加新的测试后端
+
+`api_bench_tools`目前支持的推理后端有ppl，vllm，lightllm，sglang。若要添加新的后端，需要在`python/backend_request_func.py`中添加新的请求函数，实现client与server的通信。
+
+目前的请求函数的通信协议有两种：
+
+- http：vllm，lightllm，sglang使用http server，可以使用curl命令向server发送请求
+- grpc：ppl使用grpc server，无法使用curl命令向server发送请求
+
+对于http协议的server，可以参照`python/backend_request_func.py`中的`request_openai_completions`函数，实现自己的请求函数。
+
+对于grpc协议的server，可以参照`python/backend_request_func.py`中的`request_ppl_completions`函数，实现自己的请求函数。
+
+在`python/backend_request_func.py`的`if __name__ == "__main__"`中有请求函数的调试代码，可以修改参数，然后运行`python backend_request_func.py`，测试请求函数是否正确。
+
+为了避免随机性，需要保证server返回固定的长度。常用的方法是将`ignore_eos`设为`True`，将`max_new_tokens`设为想要输出的长度。如果server没有类似的参数，需要自己想办法控制输出的长度。
+
+**注意：** 推理服务需要支持Stream模式，即逐token返回生成结果，否则无法测试动态性能。
+
+## 详细说明
 
 `api_bench_tools`包含一套测试LLM动态推理性能的工具，能够模拟真实用户场景下的LLM推理性能。
 
@@ -59,126 +140,3 @@
 统计输入token数需要用到tokenizer将prompt文本转为tokens，由于server对测试脚本为黑盒状态，测试脚本无法得知server使用的tokenizer。因此测试脚本使用固定的tokenizer，以保证不同模型、不同推理后端所测的输入token数一致。由于测试使用的tokenizer可能不是正确的tokenizer，因此测得的`total_inlen`，`avg_inlen`，`mean_inlen`，`max_inlen`，`io_tps`，可能不准确，仅供测试结果之间进行对比，其绝对值不具有参考价值。
 
 输出token数不存在这个问题，输出token数的统计是通过记录server返回的token数量直接计算，不涉及tokenizer，即`total_outlen`，`avg_outlen`，`mean_outlen`，`max_outlen`，`o_tps`是准确的。
-
-
-
-## 前置准备
-
-配置测试脚本的python环境：
-```shell
-conda creante -n perf python=3.11
-conda activate perf
-pip install -r requirements.txt
-```
-
-配置server环境：[README_SERVER.md](README_SERVER.md)
-
-
-
-下载数据集：
-
-```shell
-$ cd api_bench/datasets
-$ wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
-$ wget https://raw.githubusercontent.com/openppl-public/ppl.llm.serving/master/tools/samples_1024.json
-```
-
-在`env_setup.sh`中设置环境变量：
-```sh
-#!/bin/bash
-
-# 测试参数，根据测试用例随时进行更改
-# export BACKEND="vllm"
-export BACKEND="ppl"
-# export BACKEND="lightllm"
-# export BACKEND="amsv2"
-export MODEL_SIZE=7
-export TP_SIZE=1
-export MODE="fp16"
-export ENABLE_SYSTEM_PROMPT=0
-
-
-# benchmark_serving_num_clients.py 脚本路径
-export BENCHMARK_LLM="/mnt/nvme0n1/workspace/zhaozhiyu/work/llm-bench/gitlab/llm.perf/api_bench_tools/python/benchmark_serving_num_clients.py"
-# 数据集路径
-export DATASET_PATH="/mnt/nvme0n1/workspace/zhaozhiyu/work/llm-bench/gitlab/llm.perf/api_bench_tools/datasets/samples_1024.json"
-# 系统提示词路径
-export SYSTEM_PROMPT_PATH="/mnt/nvme0n1/workspace/zhaozhiyu/work/llm-bench/gitlab/llm.perf/api_bench_tools/datasets/system_prompt_sample.txt"
-# benchmark tokenizer路径
-export BENCHMARK_TOKENIZER_PATH="/mnt/llm2/llm_perf/hf_models/llama-7b-hf"
-# OPMX模型路径，用于ppl_llm_server
-export OPMX_MODEL_PATH="/mnt/llm/LLaMA/test/opmx_models"
-# Huggingface模型路径，用于vllm_server和lightllm_server
-export HF_MODEL_PATH="/mnt/llm2/llm_perf/hf_models"
-# URLS
-export VLLM_SERVER_URL="http://127.0.0.1:8000"
-export PPL_SERVER_URL="127.0.0.1:23333"
-export LIGHTLLM_SERVER_URL="http://127.0.0.1:8080"
-export AMSV2_SERVER_URL="https://devsft.studio.sensecoreapi.cn/gpu8-sensechat590-20240719"
-# AMSV2 API Key
-export AMSV2_API_KEY="eyJhbGciOiJFUzI1NiIsImtpZCI6ImNiMTY1YTA1LWY1ZTctNDkzYS1hNjMwLTcyOTM3YmE1YTM0ZiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMzcxNjgzMTEsImlhdCI6MTcyMTYzNTUxMSwiaXNzIjoiaHR0cHM6Ly9pYW0taW50ZXJuYWwuc2Vuc2Vjb3JlYXBpLmNuLyIsImp0aSI6IjQ1YmYzMWE4LTdmZjItNDM5OC04NmMwLTQwMDg5ZjU0M2M3NiIsInJlc291cmNlX2lkIjoiZDkxN2JkYmQtNDViMC0xMWVmLTkwMjktM2U2NDkxYjJlNmY1Iiwic3ViIjoiNjMwZmI3MTI2MWViNjgxMjAwMjNmZTY1YWNjNWFiNDgiLCJ1cmkiOiJkZXZzZnQuc3R1ZGlvLnNlbnNlY29yZWFwaS5jbi9ncHU4LXNlbnNlY2hhdDU5MC0yMDI0MDcxOSJ9.4Dt712ONtlKHVcCTv9AVpCBLTo0osDXHHqIzzDsIsLTU1rGKqsjBQaW4xPKM-pIGbVoSb1KzyO1T4gTFSU6Xgw"
-```
-
-## 测试启动
-
-在`env_setup.sh`中设置BACKEND、MODEL_SIZE、TP_SIZE、MODE等参数，然后执行
-
-```shell
-$ source env_setup.sh
-```
-
-启动对应的server：[README_SERVER.md](README_SERVER.md)
-
-启动测试脚本
-
-```shell
-$ bash benchmark_all_cuda.sh
-```
-
-测试完成后，关闭server
-
-结果保存在`result/`中，历史结果会自动归档在`result/$date`目录中。
-
-需要修改推理后端、数据集、服务器url等参数时，修改`env_setup.sh`的相应内容，然后重新执行`source env_setup.sh`。
-
-**注意**：`env_setup.sh`中的`MODEL_SIZE`，`TP_SIZE`，`MODE`仅起标识作用，设置这些参数不会改变server的启动设置，server的启动设置仅由命令行参数决定。请手动保证`env_setup.sh`中的`MODEL_SIZE`，`TP_SIZE`，`MODE`与server的启动设置一致。
-
-
-## 使用Python测试单个case
-
-`benchmark_all_cuda.sh`调用了`python/benchmark_serving_num_clients.py`，如果想测试单个测试用例，或者想debug，可以直接运行`benchmark_serving_num_clients.py`，步骤如下：
-
-1.启动对应的server
-
-2.启动 client，开始benchmark：
-```shell
-$ python python/benchmark_serving_num_clients.py \
---base-url YOUR_SERVER_URL \
---backend vllm \
---model PATH_TO_HF_MODEL \
---dataset-path datasets/samples_1024.json \
---num-requests 1024 \
---num-turns 1 \ 
---num-threads 100 \ 
---ramp-up-time 10 \ 
---thread-stop-time 300 
-```
-
-## 添加新的测试后端
-
-`api_bench_tools`目前支持vllm，ppl，lightllm三种后端。若要添加新的后端，需要在`python/backend_request_func.py`中添加新的请求函数，实现client与server的通信。
-
-目前的请求函数的通信协议有两种：
-
-- http：vllm，lightllm，sglang使用http server，可以使用curl命令向server发送请求
-- grpc：ppl使用grpc server，无法使用curl命令向server发送请求
-
-对于http协议的server，可以参照`python/backend_request_func.py`中的`request_openai_completions`函数，实现自己的请求函数。
-
-对于grpc协议的server，可以参照`python/backend_request_func.py`中的`request_ppl_completions`函数，实现自己的请求函数。
-
-在`python/backend_request_func.py`的`if __name__ == "__main__"`中有请求函数的调试代码，可以修改参数，然后运行`python backend_request_func.py`，测试请求函数是否正确。
-
-为了避免随机性，需要保证server返回固定的长度。常用的方法是将`ignore_eos`设为`True`，将`max_new_tokens`设为想要输出的长度。如果server没有类似的参数，需要自己想办法控制输出的长度。
-
-**注意：** 推理服务需要支持Stream模式，即逐token返回生成结果，否则无法测试动态性能。
