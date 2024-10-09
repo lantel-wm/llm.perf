@@ -6,9 +6,7 @@
 # export BACKEND="lightllm"
 # export BACKEND="amsv2"
 export BACKEND="sglang"
-export MODEL_SIZE="llama2-7b"
-export TP_SIZE=1
-export MODE="fp16"
+export MODEL_TAG="llama2-7b_tp1_fp16"
 export ENABLE_SYSTEM_PROMPT=1
 export DATASET="sharegpt"
 # export DATASET="xiaomi"
