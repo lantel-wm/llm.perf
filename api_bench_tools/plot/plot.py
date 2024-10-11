@@ -164,7 +164,7 @@ def strip_different_attribute(
             continue
         value = result_dict[attr]
         match attr:
-            case 'model_name' | 'device' | 'dataset':
+            case 'model_name' | 'device' | 'dataset' | 'backend':
                 tag += f"{value}_"
             case 'tp_size':
                 tag += f"tp{value}_"
@@ -323,25 +323,25 @@ def plot(
     
     
 if __name__ == '__main__':
-    # 需要保证所有 bench result 的 model_name, device, backend, tp_size, ep_size, dataset, use_system_prompt 有且仅有一项不同
+    # 需要保证所有 bench result 的 model_name, device, backend, tp_size, ep_size, dataset, use_system_prompt 中有且仅有一项不同
     res0 = BenchResult(
-        result_path='../../sglang/api_bench/result/benchmark_result_num_client_a100_20240930/benchmark_sglang_sharegpt-system-prompt_llama2-7b-tp1-fp16_result.csv',
-        model_name='llama2-7b',
-        device='A100',
+        result_path='../../sglang/api_bench/result/benchmark_result_num_client_h200_20240928/benchmark_sglang_sharegpt-system-prompt_mixtral-8x22b-tp4-fp16_result.csv',
+        model_name='mixtral-8x22b',
+        device='H200',
         backend='sglang',
-        tp_size=1,
-        ep_size=None,
+        tp_size=4,
+        ep_size=1,
         dataset='sharegpt',
         use_system_prompt=True,
     )
     
     res1 = BenchResult(
-        result_path='../../ppl_llm/api_bench/result/benchmark_result_num_clients_a100-80g_20240814/benchmark_ppl_sharegpt-system-prompt_llama2-7b-tp1-fp16_result.csv',
-        model_name='llama2-7b',
-        device='A100',
-        backend='ppl',
-        tp_size=1,
-        ep_size=None,
+        result_path='../../sglang/api_bench/result/benchmark_result_num_client_h800_20240929/benchmark_sglang_sharegpt-system-prompt_mixtral-8x22b-tp4-fp16_result.csv',
+        model_name='mixtral-8x22b',
+        device='H100',
+        backend='sglang',
+        tp_size=4,
+        ep_size=1,
         dataset='sharegpt',
         use_system_prompt=True,
     )
@@ -357,5 +357,6 @@ if __name__ == '__main__':
     
     plot(
         result_list=[res0, res1], 
-        metric_list=['p90_ttft', 'qps', 'o_tps']
+        metric_list=['p99_ttft', 'mean_ttft', 'p99_tpot', 'mean_tpot', 'qps', 'o_tps'],
+
     )
