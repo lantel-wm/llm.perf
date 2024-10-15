@@ -1,7 +1,15 @@
 import json
 import random
-from transformers import PreTrainedTokenizerBase, AutoTokenizer
+from dataclasses import dataclass
 from typing import AsyncGenerator, List, Optional, Tuple
+from transformers import PreTrainedTokenizerBase, AutoTokenizer
+
+
+@dataclass
+class Request:
+    prompt: str
+    input_len: int
+    output_len: int
 
 
 def sample_sharegpt_requests(
@@ -11,7 +19,7 @@ def sample_sharegpt_requests(
     tokenizer: PreTrainedTokenizerBase,
     fixed_output_len: Optional[int] = None,
     system_prompt_path: Optional[str] = None,
-) -> List[Tuple[str, int, int]]:
+) -> List[Request]:
     """sample sharegpt format dataset to requests.
 
     Args:
@@ -26,7 +34,7 @@ def sample_sharegpt_requests(
         ValueError: output_len too small
 
     Returns:
-        List[Tuple[str, int, int]]: filtered dataset, each element is a tuple of (prompt, input_len, output_len)
+        List[Request]: filtered dataset, each element is a Request instance.
     """
     # print("[I] Sampling requests...")
     if fixed_output_len is not None and fixed_output_len < 4:
@@ -48,7 +56,7 @@ def sample_sharegpt_requests(
     random.shuffle(dataset)
 
     # Filter out sequences that are too long or too short
-    filtered_dataset: List[Tuple[str, int, int]] = []
+    filtered_dataset: List[Request] = []
     for i in range(len(dataset)):
         if len(filtered_dataset) == num_requests:
             break
@@ -73,7 +81,7 @@ def sample_sharegpt_requests(
             # Prune too short sequences.
             continue
         
-        filtered_dataset.append((prompt, prompt_len, output_len))
+        filtered_dataset.append(Request(prompt, prompt_len, output_len))
         
         if i == len(dataset) - 1:
             i = 0

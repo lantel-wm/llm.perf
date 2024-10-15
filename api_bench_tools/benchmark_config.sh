@@ -8,14 +8,14 @@ export BACKEND="ppl"
 # export BACKEND="amsv2"
 # export BACKEND="sglang" 
 # 模型标签，仅起标识作用，请自行保证模型标签与实际测试的模型一致
-export MODEL_TAG="llama2-7b_tp1_fp16" 
+export MODEL_TAG="llama2-7b_tp1_fp16"
 # system prompt开关，1表示使用system prompt，0表示不使用system prompt（system prompt文件路径在配置参数中指定）
-export ENABLE_SYSTEM_PROMPT=1
+export ENABLE_SYSTEM_PROMPT=0
 # 测试使用的数据集，支持sharegpt和xiaomi (数据集路径在配置参数中指定)
 export DATASET="sharegpt"
 # export DATASET="xiaomi"
 # 测试并发数
-export NUM_CLIENTS=(1 5 10 20 30 40 50 100 200 300)
+export NUM_CLIENTS=(300 1 5 10 20 30 40 50 100 200 300)
 # 停止时间，单位为秒
 export STOP_TIME=300
 
@@ -38,7 +38,7 @@ export OPMX_MODEL_PATH="/mnt/llm2/llm_perf/ppl_llm/opmx_models"
 export HF_MODEL_PATH="/mnt/llm2/llm_perf/hf_models"
 # server urls
 export VLLM_SERVER_URL="http://127.0.0.1:8000"
-export PPL_SERVER_URL="127.0.0.1:23334"
+export PPL_SERVER_URL="127.0.0.1:33332"
 export LIGHTLLM_SERVER_URL="http://127.0.0.1:8080"
 export SGLANG_SERVER_URL="http://127.0.0.1:30000"
 export AMSV2_SERVER_URL="https://devsft.studio.sensecoreapi.cn/gpu8-sensechat590-20240719"

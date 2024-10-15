@@ -107,7 +107,7 @@ CMD="python $BENCHMARK_LLM \
 --ramp-up-time $RAMP_UP_TIME \
 --thread-stop-time $STOP_TIME \
 --log-file $PERF_BASE_PATH/log/benchmark_all_cuda.log \
---log-level WARNING \
+--log-level INFO \
 $BENCHMARK_EXTENDED_OPTIONS"
 
 echo "BENCH MODEL${MODEL_TAG} TP${TP_SIZE} CLIENTS${CLIENTS} -> $CMD"
