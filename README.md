@@ -8,9 +8,8 @@
 
 静态推理性能测试，测试引擎的原生性能
 
-### queue_bench
+仅ppl支持静态性能测试，脚本位于`ppl_llm/static_bench`
 
-以数据集为输入的静态推理性能测试，以模拟推理引擎在不同场景下的静态性能。也考察推理引擎的动态特性，如remove padding，early finish
 
 ### api_bench
 
@@ -18,10 +17,8 @@
 
 测试时需要先启动api_server，再启动benchmark client进行请求发送和性能测试，此测试可能会受网路波动影响
 
-## 原始模型
+脚本位于`api_bench_tools`
 
-模型文件在hf_models文件夹下，具体目录/mnt/llm2/llm_perf/hf_models，不能上传到git
+详细文档见: [api_bench_tools/README.md](api_bench_tools/README.md)
 
-## PPL.LLM
 
-模型文件在opmx_models文件夹下，具体目录/mnt/llm2/llm_perf/ppl_llm/opmx_models，不能上传到git
