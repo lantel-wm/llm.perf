@@ -4,49 +4,45 @@ SCRIPT=$(realpath -s "$0")
 PERF_BASE_PATH=$(dirname "$SCRIPT")
 source "$PERF_BASE_PATH/logging.sh"
 
-MODEL_SIZE=$1
+MODEL_TAG=$1
 
-if [ -z "$MODEL_SIZE" ]; then
-    MODEL_SIZE=7
+if [ -z "$MODEL_TAG" ]; then
+    echo "[ERROR] Please set MODEL_TAG"
+    ERROR "Please set MODEL_TAG"
+    exit 1
 fi
 
-TP_SIZE=$2
-
-if [ -z "$TP_SIZE" ]; then
-    TP_SIZE=1
-fi
-
-PROMPTS=$3
+PROMPTS=$2
 
 if [ -z "$PROMPTS" ]; then
     PROMPTS=1000
 fi
 
-TURNS=$4
+TURNS=$3
 
 if [ -z "$TURNS" ]; then
     TURNS=1
 fi
 
-CLIENTS=$5
+CLIENTS=$4
 
 if [ -z "$CLIENTS" ]; then
     CLIENTS=1
 fi
 
-RAMP_UP_TIME=$6
+RAMP_UP_TIME=$5
 
 if [ -z "$RAMP_UP_TIME" ]; then
     RAMP_UP_TIME=1
 fi
 
-STOP_TIME=$7
+STOP_TIME=$6
 
 if [ -z "$STOP_TIME" ]; then
     STOP_TIME=300
 fi
 
-BACKEND=$8
+BACKEND=$7
 
 if [ -z "$BACKEND" ]; then
     BACKEND="vllm"
@@ -62,11 +58,7 @@ if [ -z "$DATASET" ]; then
     DATASET="sharegpt"
 fi
 
-MODEL_DIR="${HF_MODEL_PATH}/llama-${MODEL_SIZE}b-hf"
-
-
 if [ -z "$BENCHMARK_LLM" ]; then
-    # BENCHMARK_LLM="$PERF_BASE_PATH/python/benchmark_serving_num_clients.py"
     echo "[ERROR] Please set BENCHMARK_LLM"
     ERROR "Please set BENCHMARK_LLM"
     exit 1
@@ -85,8 +77,8 @@ if [ -z "$SERVER_URL" ];then
     elif [ "$BACKEND" = "sglang" ]; then
         SERVER_URL="${SGLANG_SERVER_URL}"
     else
-        echo "[ERROR] Please set SERVER_URL"
-        ERROR "Please set SERVER_URL"
+        echo "[ERROR] Unsupported backend $BACKEND"
+        ERROR "Unsupported backend $BACKEND"
         exit 1
     fi
 fi
@@ -101,13 +93,11 @@ else
 fi
 
 INFO "Using $DATASET dataset, dataset path: $DATASET_PATH"
-INFO "sharegpe data path: $SHAREGPT_DATASET_PATH"
-INFO "xiaomi data path: $XIAOMI_DATASET_PATH"
 
 CMD="python $BENCHMARK_LLM \
 --base-url $SERVER_URL \
 --backend $BACKEND \
---model $MODEL_DIR \
+--model $MODEL_TAG \
 --tokenizer $BENCHMARK_TOKENIZER_PATH \
 --dataset $DATASET \
 --dataset-path $DATASET_PATH \
@@ -116,9 +106,11 @@ CMD="python $BENCHMARK_LLM \
 --num-threads $CLIENTS \
 --ramp-up-time $RAMP_UP_TIME \
 --thread-stop-time $STOP_TIME \
+--log-file $PERF_BASE_PATH/log/benchmark_all_cuda.log \
+--log-level WARNING \
 $BENCHMARK_EXTENDED_OPTIONS"
 
-echo "BENCH MODEL${MODEL_SIZE}B TP${TP_SIZE} CLIENTS${CLIENTS} -> $CMD"
-INFO "BENCH MODEL${MODEL_SIZE}B TP${TP_SIZE} CLIENTS${CLIENTS} -> $CMD"
+echo "BENCH MODEL${MODEL_TAG} TP${TP_SIZE} CLIENTS${CLIENTS} -> $CMD"
+INFO "BENCH MODEL${MODEL_TAG} TP${TP_SIZE} CLIENTS${CLIENTS} -> $CMD"
 
 eval "$CMD"

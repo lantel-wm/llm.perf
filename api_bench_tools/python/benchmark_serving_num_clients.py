@@ -15,9 +15,7 @@ from transformers import PreTrainedTokenizerBase
 from backend_request_func import REQUEST_FUNCS, RequestFuncInput, RequestFuncOutput, get_tokenizer
 from dataset_sample import DATASET_SAMPLE
 
-logging.basicConfig(level=logging.WARNING,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S')
+
 
 @dataclass
 class BenchmarkMetrics:
@@ -238,6 +236,7 @@ def benchmark(
     api_key: Optional[str] = None,
     thread_id: int = -1,
     num_requests: int = -1,
+    logger: Optional[logging.Logger] = None,
 ):
     """Benchmark main function, called from each thread.
 
@@ -251,6 +250,7 @@ def benchmark(
         api_key (Optional[str], optional): api key. Defaults to None.
         thread_id (int, optional): thread id. Defaults to -1.
         num_requests (int, optional): number of requests to send. Defaults to -1.
+        logger (Optional[Logger], optional): logger. Defaults to None.
 
     Raises:
         ValueError: Unknown backend.
@@ -263,7 +263,7 @@ def benchmark(
     else:
         raise ValueError(f"Unknown backend: {backend}")
 
-    logging.debug(f"Starting benchmark for backend: {backend}, model_id: {model_id}, thread_id: {thread_id}, num_requests: {num_requests}")
+    logger.info(f"Starting benchmark for backend: {backend}, model_id: {model_id}, thread_id: {thread_id}, num_requests: {num_requests}")
     
     benchmark_start_time = time.perf_counter()
     outputs = []
@@ -285,7 +285,7 @@ def benchmark(
             request_id=request_id,
             num_requests=num_requests,
         )
-        logging.debug(f"Request {request_id} for thread {thread_id} with prompt_len {prompt_len} and output_len {output_len}")
+        logger.info(f"Request {request_id} for thread {thread_id} with prompt_len {prompt_len} and output_len {output_len}")
         outputs.append(request_func(request_func_input=request_func_input))
         
     return outputs
@@ -308,6 +308,7 @@ class benchThread(threading.Thread):
         self.best_of = best_of
         self.use_beam_search = use_beam_search
         self.num_requests = num_requests
+        self.logger = logging.getLogger(f"thread_{thread_id}")
         
     def run(self):
         time.sleep(self.ramp_up_time)
@@ -321,6 +322,7 @@ class benchThread(threading.Thread):
                 use_beam_search=self.use_beam_search,
                 thread_id=self.thread_id,
                 num_requests=self.num_requests,
+                logger=self.logger,
             )
         
     def get_result(self):
@@ -355,31 +357,31 @@ def api_url_standardize(base_url: str, endpoint: str, backend: str) -> str:
         api_url = f"{base_url}{endpoint}"
         if not api_url.startswith("http"):
             api_url = f"http://{api_url}"
-        logging.debug(f"using vllm backend with api url: {api_url}")
+        logger.info(f"using vllm backend with api url: {api_url}")
     elif backend in ["ppl"]:
         api_url = base_url
-        logging.debug(f"using ppl backend with api url: {api_url}")
+        logger.info(f"using ppl backend with api url: {api_url}")
     elif backend in ["trt"]:
         api_url = base_url
         if not api_url.startswith("http"):
             api_url = f"http://{api_url}"
         if not api_url.endswith("/v2/models/ensemble/generate_stream"):
             api_url = f"{api_url}/v2/models/ensemble/generate_stream"
-        logging.debug(f"using trt backend with api url: {api_url}")
+        logger.info(f"using trt backend with api url: {api_url}")
     elif backend in ["amsv2"]:
         api_url = base_url
         if not api_url.startswith("http"):
             api_url = f"http://{api_url}"
         if not api_url.endswith("/text-generation/generate_stream"):
             api_url = f"{api_url}/text-generation/generate_stream"
-        logging.debug(f"using amsv2 backend with api url: {api_url}")
+        logger.info(f"using amsv2 backend with api url: {api_url}")
     elif backend in ["sglang"]:
         api_url = base_url
         if not api_url.startswith("http"):
             api_url = f"http://{api_url}"
         if not api_url.endswith("/generate"):
             api_url = f"{api_url}/generate"
-        logging.debug(f"using sglang backend with api url: {api_url}")
+        logger.info(f"using sglang backend with api url: {api_url}")
     else:
         raise ValueError(f"Unknown backend: {backend}")
     
@@ -392,8 +394,8 @@ def main(args: argparse.Namespace):
     os.environ["HTTP_PROXY"] = ""
     os.environ["HTTPS_PROXY"] = ""
     os.environ["https_proxy"] = ""
-    
-    logging.debug(args)
+        
+    logger.info(args)
     assert args.num_requests > 0, "Number of threads must be greater than 0."
     
     backend = args.backend
@@ -431,7 +433,7 @@ def main(args: argparse.Namespace):
                                 args.best_of, args.use_beam_search, args.num_requests)
         thread.start()
         threads.append(thread)
-        logging.debug(f"started thread {thread_id} with ramp up time {thread_id * args.ramp_up_time / args.num_threads}")
+        logger.info(f"thread {thread_id} launched with ramp up time {thread_id * args.ramp_up_time / args.num_threads}")
 
     for thread in threads:
         thread.join()
@@ -558,6 +560,25 @@ if __name__ == "__main__":
         default=None,
         help="Path to the system prompt file. None for no system prompt.",
     )
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        default=None,
+        help="Path to the log file. Log file is shared by python and shell scripts, None for no python log.",
+    )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="WARNING",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Log level.",
+    )
 
     args = parser.parse_args()
+    logging.basicConfig(
+        format='[%(levelname)s] %(asctime)s %(filename)s:%(lineno)d %(message)s',
+        level=args.log_level,
+        filename=args.log_file,
+    )
+    logger = logging.getLogger()
     main(args)

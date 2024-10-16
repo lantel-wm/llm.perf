@@ -1,5 +1,6 @@
 *models
 api_bench_tools/result
+api_bench_tools/log
 .vscode
 
 # PYTHON

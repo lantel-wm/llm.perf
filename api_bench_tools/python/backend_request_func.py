@@ -10,10 +10,6 @@ from typing import List, Optional, Union
 from transformers import (AutoTokenizer, PreTrainedTokenizer,
                           PreTrainedTokenizerFast)
 
-logging.basicConfig(level=logging.WARNING,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S')
-
 HTTP_TIMEOUT = 6 * 60 * 60
 
 @dataclass
@@ -56,6 +52,7 @@ def remove_prefix(text: str, prefix: str) -> str:
 def request_openai_completions(
     request_func_input: RequestFuncInput,
 ) -> RequestFuncOutput:
+    logger = logging.getLogger()
     api_url = request_func_input.api_url
     assert api_url.endswith(
         "v1/completions"
@@ -75,6 +72,8 @@ def request_openai_completions(
     headers = {
         "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
     }
+    
+    logger.debug(f"request_openai_completions: payload={payload}, headers={headers}")
     
     # curl -X POST 10.198.31.25:8000/v1/completions -H "Authorization: Bearer YOUR_API_KEY" -d '{"model": "/mnt/llm2/llm_perf/hf_models/llama-7b-hf", "prompt": "Once upon a time", "temperature": 0.0, "best_of": 1, "max_tokens": 100, "min_tokens": 100, "stream": true, "ignore_eos": true}'
 
@@ -102,6 +101,7 @@ def request_openai_completions(
                     
                     if chunk == "[DONE]":
                         latency = time.perf_counter() - st
+                        logger.debug(f"request_openai_completions: [DONE] latency={latency}s")
                     else:
                         data = json.loads(chunk)
                         
@@ -131,6 +131,7 @@ def request_openai_completions(
             else:
                 output.success = False
                 output.error = f"HTTP Status Code: {response.status_code}\nresponse.text: {response.text}"
+                logger.warning(f"thread {request_func_input.thread_id} request {request_func_input.request_id} failed: {output.error}")
 
     except Exception:
         output.success = False
@@ -139,7 +140,10 @@ def request_openai_completions(
 
     return output
 
-def request_ppl_completions_old(request_func_input: RequestFuncInput) -> RequestFuncOutput:
+def request_ppl_completions_old(
+        request_func_input: RequestFuncInput,
+    ) -> RequestFuncOutput:
+    logger = logging.getLogger()
     import grpc
     from ppl_server_utils import llm_pb2, llm_pb2_grpc
     
@@ -162,6 +166,8 @@ def request_ppl_completions_old(request_func_input: RequestFuncInput) -> Request
     )
     batched_request = llm_pb2.BatchedRequest(req=[request])
     
+    logger.debug(f"request_ppl_completions: id {thread_id * num_requests + request_id} prompt {request.prompt}")
+    
     output = RequestFuncOutput(
         thread_id=request_func_input.thread_id, 
         request_id=request_func_input.request_id,
@@ -179,7 +185,7 @@ def request_ppl_completions_old(request_func_input: RequestFuncInput) -> Request
         for response in response_stream:
             for rsp in response.rsp:
                 if rsp.status == llm_pb2.Status.FAILED:
-                    logging.warning(f"Request {request.id} failed")
+                    logger.warning(f"Request {request.id} (thread {thread_id} request {request_id}) failed")
                     output.success = False
                     output.error = "Response Status: FAILED"
                     break
@@ -198,9 +204,9 @@ def request_ppl_completions_old(request_func_input: RequestFuncInput) -> Request
                         output_len += 1
                         
                     if rsp.status == llm_pb2.Status.FINISHED:
-                        logging.info(f"Request {request.id} finished")
                         latency = time.perf_counter() - st
                         output.success = True
+                        logger.debug(f"request_ppl_completions: [DONE] latency={latency}s")
                         break
         
         output.generated_text = generated_text
@@ -214,7 +220,10 @@ def request_ppl_completions_old(request_func_input: RequestFuncInput) -> Request
         
     return output
 
-def request_ppl_completions(request_func_input: RequestFuncInput) -> RequestFuncOutput:
+def request_ppl_completions(
+        request_func_input: RequestFuncInput,
+    ) -> RequestFuncOutput:
+    logger = logging.getLogger()
     import grpc
     from ppl_server_utils import llm_pb2, llm_pb2_grpc
     
@@ -245,6 +254,8 @@ def request_ppl_completions(request_func_input: RequestFuncInput) -> RequestFunc
     )
     batched_request = llm_pb2.BatchedRequest(req=[request])
     
+    logger.debug(f"request_ppl_completions: id {thread_id * num_requests + request_id} prompt {request.prompt}")
+    
     output = RequestFuncOutput(
         thread_id=request_func_input.thread_id, 
         request_id=request_func_input.request_id,
@@ -262,7 +273,7 @@ def request_ppl_completions(request_func_input: RequestFuncInput) -> RequestFunc
         for response in response_stream:
             for rsp in response.rsp:
                 if rsp.status == llm_pb2.Status.FAILED:
-                    logging.warning(f"Request {request.id} failed")
+                    logger.warning(f"Request {request.id} (thread {thread_id} request {request_id}) failed")
                     output.success = False
                     output.error = "Response Status: FAILED"
                     break
@@ -281,9 +292,9 @@ def request_ppl_completions(request_func_input: RequestFuncInput) -> RequestFunc
                         output_len += 1
                         
                     if rsp.status == llm_pb2.Status.FINISHED:
-                        logging.info(f"Request {request.id} finished")
                         latency = time.perf_counter() - st
                         output.success = True
+                        logger.debug(f"request_ppl_completions: [DONE] latency={latency}s")
                         break
         
         output.generated_text = generated_text
@@ -302,6 +313,7 @@ def request_ppl_completions(request_func_input: RequestFuncInput) -> RequestFunc
 def request_trtllm_generate_stream(
     request_func_input: RequestFuncInput,
 ) -> RequestFuncOutput:
+    logger = logging.getLogger()
     api_url = request_func_input.api_url
     assert api_url.endswith("generate_stream")
     assert not request_func_input.use_beam_search
@@ -322,6 +334,8 @@ def request_trtllm_generate_stream(
         request_id=request_func_input.request_id,
         prompt_len=request_func_input.prompt_len
     )
+    
+    logger.debug(f"request_trtllm_generate_stream: payload={payload}")
 
     generated_text = ""
     output_len = 0
@@ -357,9 +371,11 @@ def request_trtllm_generate_stream(
                 output.output_len = output_len
                 output.success = True
                 output.latency = most_recent_timestamp - st
+                logger.debug(f"request_trtllm_generate_stream: [DONE] latency={output.latency}s")
             else:
                 output.success = False
                 output.error = f"HTTP Status Code: {response.status_code}\nresponse.reason: {response.reason}"
+                logger.warning(f"thread {request_func_input.thread_id} request {request_func_input.request_id} failed: {output.error}")
 
     except Exception:
         output.success = False
@@ -373,6 +389,7 @@ def request_trtllm_generate_stream(
 def request_lightllm_generate_stream(
     request_func_input: RequestFuncInput,
 ) -> RequestFuncOutput:
+    logger = logging.getLogger()
     api_url = request_func_input.api_url
     assert api_url.endswith("generate_stream")
     assert not request_func_input.use_beam_search
@@ -391,6 +408,9 @@ def request_lightllm_generate_stream(
     headers = {
         "Content-Type": "application/json",
     }
+    
+    logger.debug(f"request_lightllm_generate_stream: payload={payload}, headers={headers}")
+    
     output = RequestFuncOutput(
         thread_id=request_func_input.thread_id,
         request_id=request_func_input.request_id,
@@ -434,9 +454,12 @@ def request_lightllm_generate_stream(
                 output.output_len = output_len
                 output.success = True
                 output.latency = most_recent_timestamp - st
+                logger.debug(f"request_lightllm_generate_stream: [DONE] latency={output.latency}")
             else:
                 output.success = False
                 output.error = f"HTTP Status Code: {response.status_code}\nresponse.reason: {response.reason}"
+                logger.warning(f"thread {request_func_input.thread_id} request {request_func_input.request_id} failed: {output.error}")
+
 
     except Exception:
         output.success = False
@@ -463,6 +486,7 @@ def request_lightllm_generate_stream(
 def request_amsv2_generate_stream(
     request_func_input: RequestFuncInput,
 ) -> RequestFuncOutput:
+    logger = logging.getLogger()
     api_url = request_func_input.api_url
     assert api_url.endswith("generate_stream")
     api_key = request_func_input.api_key
@@ -484,6 +508,8 @@ def request_amsv2_generate_stream(
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
     }
+    
+    logger.debug(f"request_amsv2_generate_stream: payload={payload}, headers={headers}")
         
     output = RequestFuncOutput(
         thread_id=request_func_input.thread_id,
@@ -528,9 +554,11 @@ def request_amsv2_generate_stream(
                 output.output_len = output_len
                 output.success = True
                 output.latency = most_recent_timestamp - st
+                logger.debug(f"request_amsv2_generate_stream: [DONE] latency={output.latency}")
             else:
                 output.success = False
                 output.error = f"HTTP Status Code: {response.status_code}\nresponse.reason: {response.reason}"
+                logger.warning(f"thread {request_func_input.thread_id} request {request_func_input.request_id} failed: {output.error}")
 
     except Exception:
         output.success = False
@@ -543,6 +571,8 @@ def request_amsv2_generate_stream(
 def request_sglang_generate(
     request_func_input: RequestFuncInput,
 ) -> RequestFuncOutput:
+    logger = logging.getLogger()
+    logger = logging.getLogger()
     api_url = request_func_input.api_url
     assert api_url.endswith(
         "/generate"
@@ -561,6 +591,8 @@ def request_sglang_generate(
     headers = {
         "Content-Type": "application/json",
     }
+    
+    logger.debug(f"request_sglang_generate: payload={payload}, headers={headers}")
     
     output = RequestFuncOutput(
         thread_id=request_func_input.thread_id, 
@@ -586,6 +618,7 @@ def request_sglang_generate(
                     
                     if chunk == "[DONE]":
                         latency = time.perf_counter() - st
+                        logger.debug(f"request_sglang_generate: [DONE] latency={latency}s")
                     else:
                         data = json.loads(chunk)
                         
@@ -611,6 +644,7 @@ def request_sglang_generate(
             else:
                 output.success = False
                 output.error = f"HTTP Status Code: {response.status_code}\nresponse.text: {response.text}"
+                logger.warning(f"thread {request_func_input.thread_id} request {request_func_input.request_id} failed: {output.error}")
 
     except Exception:
         output.success = False
@@ -625,7 +659,6 @@ def get_tokenizer(
 ) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast]:
     return AutoTokenizer.from_pretrained(pretrained_model_name_or_path,
                                          trust_remote_code=trust_remote_code)
-
 
 
 REQUEST_FUNCS = {
