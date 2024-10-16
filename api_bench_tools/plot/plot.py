@@ -358,5 +358,4 @@ if __name__ == '__main__':
     plot(
         result_list=[res0, res1], 
         metric_list=['p99_ttft', 'mean_ttft', 'p99_tpot', 'mean_tpot', 'qps', 'o_tps'],
-
     )
