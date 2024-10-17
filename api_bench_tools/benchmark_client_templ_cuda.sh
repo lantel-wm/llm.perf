@@ -108,6 +108,7 @@ CMD="python $BENCHMARK_LLM \
 --thread-stop-time $STOP_TIME \
 --log-file $PERF_BASE_PATH/log/benchmark_all_cuda.log \
 --log-level WARNING \
+--excute-mode Thread \
 $BENCHMARK_EXTENDED_OPTIONS"
 
 echo "BENCH MODEL${MODEL_TAG} TP${TP_SIZE} CLIENTS${CLIENTS} -> $CMD"

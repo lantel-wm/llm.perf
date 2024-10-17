@@ -7,6 +7,7 @@ import random
 import time
 import warnings
 import numpy as np
+import multiprocessing as mp
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -329,6 +330,41 @@ class benchThread(threading.Thread):
         self.join()
         return self.outputs
 
+class benchProcess(mp.Process):
+    """Process class for benchmarking. Each process simulates a client sending requests to the server.
+    """
+    def __init__(self, process_id, ramp_up_time, backend, api_url, api_key, model_id, tokenizer, input_requests,
+                 best_of, use_beam_search, num_requests, out_queue):
+        super(benchProcess, self).__init__()
+        self.process_id = process_id
+        self.ramp_up_time = ramp_up_time
+        self.backend = backend
+        self.api_url = api_url
+        self.api_key = api_key
+        self.model_id = model_id
+        self.tokenizer = tokenizer
+        self.input_requests = input_requests
+        self.best_of = best_of
+        self.use_beam_search = use_beam_search
+        self.num_requests = num_requests
+        self.logger = logging.getLogger(f"process_{process_id}")
+        self.out_queue = out_queue
+        
+    def run(self):
+        time.sleep(self.ramp_up_time)
+        self.outputs = benchmark(
+                backend=self.backend,
+                api_url=self.api_url,
+                api_key=self.api_key,
+                model_id=self.model_id,
+                input_requests=self.input_requests,
+                best_of=self.best_of,
+                use_beam_search=self.use_beam_search,
+                thread_id=self.process_id,
+                num_requests=self.num_requests,
+                logger=self.logger,
+            )
+        self.out_queue.put(self.outputs)
 
 def roll(lst: list, n: int):
     """roll a list by n positions
@@ -421,6 +457,8 @@ def main(args: argparse.Namespace):
     # start benchmark
     benchmark_start_time = time.perf_counter()
     threads = []
+    out_queue = mp.Queue()
+    all_outputs = []
     # input_requests_list is a list of length num_threads, each element is a list of input requests
     # e.g.: input_requests_list[thread_id][request_id] refers to the request_id-th request in the thread_id-th thread
     input_requests_list = []
@@ -429,22 +467,30 @@ def main(args: argparse.Namespace):
         if thread_id % 2 == 1:
             input_requests_i = input_requests_i[::-1]
         input_requests_list.append(input_requests_i)
-        thread = benchThread(thread_id, thread_id * args.ramp_up_time / args.num_threads, backend, api_url, api_key, model_id, tokenizer, input_requests_i,
-                                args.best_of, args.use_beam_search, args.num_requests)
+        if args.excute_mode in ["Thread"]:
+            thread = benchThread(thread_id, thread_id * args.ramp_up_time / args.num_threads, backend, api_url, api_key, model_id, tokenizer, input_requests_i,
+                                 args.best_of, args.use_beam_search, args.num_requests)
+        else:
+            thread = benchProcess(thread_id, thread_id * args.ramp_up_time / args.num_threads, backend, api_url, api_key, model_id, tokenizer, input_requests_i,
+                                  args.best_of, args.use_beam_search, args.num_requests, out_queue)
         thread.start()
         threads.append(thread)
         logger.info(f"thread {thread_id} launched with ramp up time {thread_id * args.ramp_up_time / args.num_threads}")
 
     for thread in threads:
-        thread.join()
+        if args.excute_mode in ["Thread"]:
+            thread.join()
+        else:
+            outputs = out_queue.get()
+            all_outputs += outputs
         
     benchmark_duration = time.perf_counter() - benchmark_start_time
 
     # gather benchmark result
-    all_outputs = []
     for thread in threads:
-        outputs = thread.get_result()
-        all_outputs += outputs
+        if args.excute_mode in ["Thread"]:
+            outputs = thread.get_result()
+            all_outputs += outputs
         
     metrics, actual_output_lens = calculate_metrics(
         input_requests_list=input_requests_list,
@@ -572,6 +618,12 @@ if __name__ == "__main__":
         default="WARNING",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Log level.",
+    )
+    parser.add_argument(
+        "--excute-mode",
+        type=str,
+        default="Thread",
+        help="Excute clients in multi-thread or multi-process."
     )
 
     args = parser.parse_args()
