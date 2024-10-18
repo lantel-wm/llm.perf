@@ -14,6 +14,10 @@ export ENABLE_SYSTEM_PROMPT=1
 # 测试使用的数据集，支持sharegpt和xiaomi (数据集路径在配置参数中指定)
 export DATASET="sharegpt"
 # export DATASET="xiaomi"
+# 测试并发数
+export NUM_CLIENTS=(1 5 10 20 30 40 50 100 200 300)
+# 停止时间，单位为秒
+export STOP_TIME=300
 
 
 #-------------------------------------------------------------------------------------------------------
