@@ -620,7 +620,7 @@ if __name__ == "__main__":
         help="Log level.",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_known_args()
     logging.basicConfig(
         format='[%(levelname)s] %(asctime)s %(filename)s:%(lineno)d %(message)s',
         level=args.log_level,

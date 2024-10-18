@@ -51,6 +51,7 @@ class BenchResult:
 def bar1(
     result_list: List[BenchResult],
     metric: str,
+    show_number: bool = True,
     image_save_dir: str = './image',
 ):
     fig, ax = plt.subplots(figsize=(6, 5))
@@ -62,9 +63,10 @@ def bar1(
     # 绘制柱状图
     ax.bar(x, y, width=0.5, color=default_colors[0])
     ax.set_xticks(x, xticks)
-    # 添加数值标签
-    for a, b in zip(x, y):
-        ax.text(a, b, f'{b:.2f}', ha='center', va='bottom', color=default_colors[0], fontsize=8)
+    
+    if show_number:
+        for a, b in zip(x, y):
+            ax.text(a, b, f'{b:.2f}', ha='center', va='bottom', color=default_colors[0], fontsize=8)
 
     ax.set_xlabel('number of clients')
     ax.set_ylabel(metric)
@@ -80,6 +82,7 @@ def bar1(
 def line1(
     result_list: List[BenchResult],
     metric: str,
+    show_number: bool = True,
     image_save_dir: str = './image',
 ):
     fig, ax = plt.subplots(figsize=(6, 5))
@@ -92,9 +95,10 @@ def line1(
     ax.grid()
     ax.plot(x, y, color=default_colors[0])
     ax.set_xticks(x, xticks)
-    # 添加数值标签
-    for a, b in zip(x, y):
-        ax.text(a, b, f'{b:.2f}', ha='center', va='bottom', color=default_colors[0], fontsize=8)
+    
+    if show_number:
+        for a, b in zip(x, y):
+            ax.text(a, b, f'{b:.2f}', ha='center', va='bottom', color=default_colors[0], fontsize=8)
 
     ax.set_xlabel('number of clients')
     ax.set_ylabel(metric)
@@ -180,6 +184,7 @@ def strip_different_attribute(
 def bar2(
     result_list: List[BenchResult],
     metric: str,
+    show_number: bool = True,
     image_save_dir: str = './image',
 ):
     fig, ax = plt.subplots(figsize=(6, 5))
@@ -196,10 +201,12 @@ def bar2(
     ax.bar(x + width / 2, y1, width, color=default_colors[1], label=labels[1])
     ax.legend(loc='upper left')
     ax.set_xticks(x, xticks)
-    for a, b in zip(x, y0):
-        ax.text(a - width / 2, b, f'{b:.2f}', ha='center', va='bottom', color=default_colors[0], fontsize=8)
-    for a, b in zip(x, y1):
-        ax.text(a + width / 2, b, f'{b:.2f}', ha='center', va='bottom', color=default_colors[1], fontsize=8)
+    
+    if show_number:
+        for a, b in zip(x, y0):
+            ax.text(a - width / 2, b, f'{b:.2f}', ha='center', va='bottom', color=default_colors[0], fontsize=8)
+        for a, b in zip(x, y1):
+            ax.text(a + width / 2, b, f'{b:.2f}', ha='center', va='bottom', color=default_colors[1], fontsize=8)
 
     ax.set_xlabel('number of clients')
     ax.set_ylabel(metric)
@@ -213,10 +220,12 @@ def bar2(
     fig.savefig(image_save_path, bbox_inches='tight', dpi=300)
     print(f'Figure saved to {image_save_path}')
 
+
 # 绘制双条折线图
 def line2(
     result_list: List[BenchResult],
     metric: str,
+    show_number: bool = True,
     image_save_dir: str = './image',
 ):
     fig, ax = plt.subplots(figsize=(6, 5))
@@ -233,10 +242,12 @@ def line2(
     ax.grid()
     ax.legend(loc='upper left')
     ax.set_xticks(x, xticks)
-    for a, b in zip(x, y0):
-        ax.text(a, b, f'{b:.2f}', ha='center', va='bottom', color=default_colors[0], fontsize=8)
-    for a, b in zip(x, y1):
-        ax.text(a, b, f'{b:.2f}', ha='center', va='top', color=default_colors[1], fontsize=8)
+    
+    if show_number:
+        for a, b in zip(x, y0):
+            ax.text(a, b, f'{b:.2f}', ha='center', va='bottom', color=default_colors[0], fontsize=8)
+        for a, b in zip(x, y1):
+            ax.text(a, b, f'{b:.2f}', ha='center', va='top', color=default_colors[1], fontsize=8)
 
     ax.set_xlabel('number of clients')
     ax.set_ylabel(metric)
@@ -250,74 +261,151 @@ def line2(
     fig.savefig(image_save_path, bbox_inches='tight', dpi=300)
     print(f'Figure saved to {image_save_path}')
 
+
 # 绘制三条柱状图
 def bar3(
     result_list: List[BenchResult],
     metric: str,
+    show_number: bool = True,
     image_save_dir: str = './image',
 ):
-    raise NotImplementedError
+    fig, ax = plt.subplots(figsize=(6, 5))
+    res0, res1, res2 = result_list
+    x = np.arange(len(res0['num_clients']))
+    xticks = [str(int(x)) for x in res0['num_clients']]
+    y0 = res0[metric]
+    y1 = res1[metric]
+    y2 = res2[metric]
+    width = 0.2
+    
+    # 查询不同的属性，作为图例
+    _, labels = find_different_attribute(result_list)
+    ax.bar(x - width * 1.2, y0, width, color=default_colors[0], label=labels[0])
+    ax.bar(x, y1, width, color=default_colors[1], label=labels[1])
+    ax.bar(x + width * 1.2, y2, width, color=default_colors[2], label=labels[2])
+    ax.legend(loc='upper left')
+    ax.set_xticks(x, xticks)
+    
+    if show_number:
+        for a, b in zip(x, y0):
+            ax.text(a - width * 1.2, b, f'{b:.2f}', ha='center', va='bottom', color=default_colors[0], fontsize=8)
+        for a, b in zip(x, y1):
+            ax.text(a, b, f'{b:.2f}', ha='center', va='bottom', color=default_colors[1], fontsize=8)
+        for a, b in zip(x, y2):
+            ax.text(a + width * 1.2, b, f'{b:.2f}', ha='center', va='bottom', color=default_colors[2], fontsize=8)
+
+    ax.set_xlabel('number of clients')
+    ax.set_ylabel(metric)
+    
+    # 查询相同的属性，作为标题
+    title = strip_different_attribute(result_list)
+    ax.set_title(title)
+    
+    # 保存图片
+    image_save_path = os.path.join(image_save_dir, f"{title}_{metric}.png")
+    fig.savefig(image_save_path, bbox_inches='tight', dpi=300)
+    print(f'Figure saved to {image_save_path}')
 
 # 绘制三条折线图
 def line3(
     result_list: List[BenchResult],
     metric: str,
+    show_number: bool = True,
     image_save_dir: str = './image',
 ):
-    raise NotImplementedError
+    fig, ax = plt.subplots(figsize=(6, 5))
+    res0, res1, res2 = result_list
+    x = np.arange(len(res0['num_clients']))
+    xticks = [str(int(x)) for x in res0['num_clients']]
+    y0 = res0[metric]
+    y1 = res1[metric]
+    y2 = res2[metric]
+    
+    # 查询不同的属性，作为图例
+    _, labels = find_different_attribute(result_list)
+    ax.plot(x, y0, color=default_colors[0], label=labels[0])
+    ax.plot(x, y1, color=default_colors[1], label=labels[1])
+    ax.plot(x, y2, color=default_colors[2], label=labels[2])
+    ax.grid()
+    ax.legend(loc='upper left')
+    ax.set_xticks(x, xticks)
+    
+    if show_number:
+        for a, b in zip(x, y0):
+            ax.text(a, b, f'{b:.2f}', ha='center', color=default_colors[0], fontsize=8)
+        for a, b in zip(x, y1):
+            ax.text(a, b, f'{b:.2f}', ha='center', color=default_colors[1], fontsize=8)
+        for a, b in zip(x, y2):
+            ax.text(a, b, f'{b:.2f}', ha='center', color=default_colors[2], fontsize=8)
+
+    ax.set_xlabel('number of clients')
+    ax.set_ylabel(metric)
+    
+    # 查询相同的属性，作为标题
+    title = strip_different_attribute(result_list)
+    ax.set_title(title)
+    
+    # 保存图片
+    image_save_path = os.path.join(image_save_dir, f"{title}_{metric}.png")
+    fig.savefig(image_save_path, bbox_inches='tight', dpi=300)
+    print(f'Figure saved to {image_save_path}')
     
 # 绘制单条结果
 def plot_single(
     result_list: List[BenchResult],
     metric_list: List[str],
+    show_number: bool = True,
     image_save_dir: str = './image',
 ):
     for metric in metric_list:
         if metric.endswith('ttft') or metric.endswith('tpot') or metric.endswith('e2e') or metric.endswith('itl'):
-            line1(result_list, metric, image_save_dir)
+            line1(result_list, metric, image_save_dir, show_number)
         else:
-            bar1(result_list, metric, image_save_dir)
+            bar1(result_list, metric, image_save_dir, show_number)
 
 
 # 绘制双条结果
 def plot_double(
     result_list: List[BenchResult],
     metric_list: List[str],
+    show_number: bool = True,
     image_save_dir: str = './image',
 ):
     for metric in metric_list:
         if metric.endswith('ttft') or metric.endswith('tpot') or metric.endswith('e2e') or metric.endswith('itl'):
-            line2(result_list, metric, image_save_dir)
+            line2(result_list, metric, image_save_dir, show_number)
         else:
-            bar2(result_list, metric, image_save_dir)
+            bar2(result_list, metric, image_save_dir, show_number)
 
 
 # 绘制三条结果
 def plot_triple(
     result_list: List[BenchResult],
     metric_list: List[str],
+    show_number: bool = True,
     image_save_dir: str = './image',
 ):
     for metric in metric_list:
         if metric.endswith('ttft') or metric.endswith('tpot') or metric.endswith('e2e') or metric.endswith('itl'):
-            line3(result_list, metric, image_save_dir)
+            line3(result_list, metric, image_save_dir, show_number)
         else:
-            bar3(result_list, metric, image_save_dir)
+            bar3(result_list, metric, image_save_dir, show_number)
 
     
 # 绘制结果
 def plot(
     result_list: List[BenchResult],
     metric_list: List[str],
+    show_number: bool = True,
     image_save_dir: str = './image',
 ):
     match len(result_list):
         case 1:
-            plot_single(result_list, metric_list, image_save_dir)
+            plot_single(result_list, metric_list, image_save_dir, show_number)
         case 2:
-            plot_double(result_list, metric_list, image_save_dir)
+            plot_double(result_list, metric_list, image_save_dir, show_number)
         case 3:
-            plot_triple(result_list, metric_list, image_save_dir)
+            plot_triple(result_list, metric_list, image_save_dir, show_number)
         case _:
             raise ValueError("Only support 1, 2 or 3 result")
     
@@ -325,23 +413,34 @@ def plot(
 if __name__ == '__main__':
     # 需要保证所有 bench result 的 model_name, device, backend, tp_size, ep_size, dataset, use_system_prompt 中有且仅有一项不同
     res0 = BenchResult(
-        result_path='../../sglang/api_bench/result/benchmark_result_num_client_h200_20240928/benchmark_sglang_sharegpt-system-prompt_llama2-70b-tp4-fp16_result.csv',
-        model_name='llama2-70b',
+        result_path='../../sglang/api_bench/result/benchmark_result_num_client_h200_20240928/benchmark_sglang_sharegpt-system-prompt_deepseek-v2-236b-tp8-fp16_result.csv',
+        model_name='deepseek-v2-236b',
         device='H200',
         backend='sglang',
-        tp_size=4,
-        ep_size=None,
+        tp_size=8,
+        ep_size=1,
         dataset='sharegpt',
         use_system_prompt=True,
     )
     
     res1 = BenchResult(
-        result_path='../../sglang/api_bench/result/benchmark_result_num_client_h800_20240929/benchmark_sglang_sharegpt-system-prompt_llama2-70b-tp4-fp16_result.csv',
-        model_name='llama2-70b',
+        result_path='../../sglang/api_bench/result/benchmark_result_num_client_h800_20240929/benchmark_sglang_sharegpt-system-prompt_deepseek-v2-236b-tp8-fp16_result.csv',
+        model_name='deepseek-v2-236b',
         device='H800',
         backend='sglang',
-        tp_size=4,
-        ep_size=None,
+        tp_size=8,
+        ep_size=1,
+        dataset='sharegpt',
+        use_system_prompt=True,
+    )
+    
+    res2 = BenchResult(
+        result_path='../../sglang/api_bench/result/benchmark_result_num_client_a100_20240930/benchmark_sglang_sharegpt-system-prompt_deepseek-v2-236b-tp8-fp16_result.csv',
+        model_name='deepseek-v2-236b',
+        device='A100',
+        backend='sglang',
+        tp_size=8,
+        ep_size=1,
         dataset='sharegpt',
         use_system_prompt=True,
     )
@@ -356,6 +455,7 @@ if __name__ == '__main__':
     # min_itl, max_itl, mean_itl, median_itl, std_itl, p90_itl, p99_itl
     
     plot(
-        result_list=[res0, res1], 
+        result_list=[res0, res1, res2], 
         metric_list=['p99_ttft', 'mean_ttft', 'p99_tpot', 'mean_tpot', 'qps', 'o_tps'],
+        show_number=True,
     )
