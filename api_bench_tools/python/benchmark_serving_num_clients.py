@@ -10,6 +10,7 @@ import argparse
 import threading
 
 import numpy as np
+import multiprocessing as mp
 
 from datetime import datetime
 from dataclasses import dataclass
@@ -68,6 +69,15 @@ class BenchmarkMetrics:
     
     
 class IterQueue(queue.Queue):
+    def __iter__(self):
+        while True:
+            try:
+                yield self.get_nowait()
+            except queue.Empty:
+                break
+
+
+class IterMpQueue(mp.Queue):
     def __iter__(self):
         while True:
             try:
@@ -160,10 +170,101 @@ class BenchThread(threading.Thread):
             logger.info(f"Request {request_id:5d} for thread {self.thread_id:4d} with prompt_len {prompt_len:5d} and output_len {output_len:5d}, prompt MD5: {hashlib.md5(prompt.encode('utf-8')).hexdigest()[:8]}")
             outputs.append(request_func(request_func_input=request_func_input))
             
-            # if isinstance(self.input_requests, IterQueue):
-            #     self.input_requests.task_done()
+        return outputs
+    
+    
+class benchProcess(mp.Process):
+    """Process class for benchmarking. Each process simulates a client sending requests to the server.
+    """
+    def __init__(
+        self, 
+        process_id: int, 
+        ramp_up_time: float, 
+        backend: str, 
+        api_url: str, 
+        api_key: str, 
+        model_id: str, 
+        tokenizer: str, 
+        best_of: int, 
+        use_beam_search: bool, 
+        num_requests: int,
+        input_requests: List[Request] | IterMpQueue,
+        out_queue: mp.Queue,
+    ):
+        super(benchProcess, self).__init__()
+        self.process_id = process_id
+        self.ramp_up_time = ramp_up_time
+        self.backend = backend
+        self.api_url = api_url
+        self.api_key = api_key
+        self.model_id = model_id
+        self.tokenizer = tokenizer
+        self.input_requests = input_requests
+        self.best_of = best_of
+        self.use_beam_search = use_beam_search
+        self.num_requests = num_requests
+        self.logger = logging.getLogger(f"process_{process_id}")
+        self.out_queue = out_queue
+        
+        
+    def run(self):
+        time.sleep(self.ramp_up_time)
+        self.outputs = benchmark(
+                backend=self.backend,
+                api_url=self.api_url,
+                api_key=self.api_key,
+                model_id=self.model_id,
+                input_requests=self.input_requests,
+                best_of=self.best_of,
+                use_beam_search=self.use_beam_search,
+                thread_id=self.process_id,
+                num_requests=self.num_requests,
+                logger=self.logger,
+            )
+        self.out_queue.put(self.outputs)
+        
+        
+    def _benchmark(self):
+        """Benchmark main function, called from each thread.
+
+        Raises:
+            ValueError: Unknown backend.
+
+        Returns:
+            List[RequestFuncOutput]: List of outputs.
+        """
+        if self.backend in REQUEST_FUNCS:
+            request_func = REQUEST_FUNCS.get(self.backend)
+        else:
+            raise ValueError(f"Unknown backend: {self.backend}")
+
+        logger.info(f"Starting benchmark for backend: {self.backend}, model_id: {self.model_id}, thread_id: {self.thread_id}, num_requests: {self.num_requests}")
+        
+        benchmark_start_time = time.perf_counter()
+        outputs = []
+        for request_id, request in enumerate(self.input_requests):
+            if args.thread_stop_time > 0 and time.perf_counter() - benchmark_start_time >= args.thread_stop_time:
+                break
+            
+            prompt, prompt_len, output_len = request.prompt, request.input_len, request.output_len
+            request_func_input = RequestFuncInput(
+                model=self.model_id,
+                prompt=prompt,
+                api_url=self.api_url,
+                api_key=self.api_key,
+                prompt_len=prompt_len,
+                output_len=output_len,
+                best_of=self.best_of,
+                use_beam_search=self.use_beam_search,
+                thread_id=self.thread_id,
+                request_id=request_id,
+                num_requests=self.num_requests,
+            )
+            logger.info(f"Request {request_id:5d} for thread {self.thread_id:4d} with prompt_len {prompt_len:5d} and output_len {output_len:5d}, prompt MD5: {hashlib.md5(prompt.encode('utf-8')).hexdigest()[:8]}")
+            outputs.append(request_func(request_func_input=request_func_input))
             
         return outputs
+        
 
 
 def calculate_metrics(
@@ -329,20 +430,6 @@ min_itl,max_itl,mean_itl,median_itl,std_itl,p90_itl,p99_itl")
     print(f"CSV format output:{csv_line}")
 
 
-def roll(lst: list, n: int):
-    """roll a list by n positions
-
-    Args:
-        lst (list): list to roll
-        n (int): number of positions to roll
-
-    Returns:
-        List: rolled list
-    """
-    n = n % len(lst)
-    return lst[n:] + lst[:n]
-
-
 def api_url_standardize(base_url: str, endpoint: str, backend: str) -> str:
     """standardize api url
 
@@ -352,37 +439,38 @@ def api_url_standardize(base_url: str, endpoint: str, backend: str) -> str:
     Returns:
         str: standardized api url
     """
-    if backend in ["vllm", "openai"]:
-        api_url = f"{base_url}{endpoint}"
-        if not api_url.startswith("http"):
-            api_url = f"http://{api_url}"
-        logger.info(f"using vllm backend with api url: {api_url}")
-    elif backend in ["ppl"]:
-        api_url = base_url
-        logger.info(f"using ppl backend with api url: {api_url}")
-    elif backend in ["trt"]:
-        api_url = base_url
-        if not api_url.startswith("http"):
-            api_url = f"http://{api_url}"
-        if not api_url.endswith("/v2/models/ensemble/generate_stream"):
-            api_url = f"{api_url}/v2/models/ensemble/generate_stream"
-        logger.info(f"using trt backend with api url: {api_url}")
-    elif backend in ["amsv2"]:
-        api_url = base_url
-        if not api_url.startswith("http"):
-            api_url = f"http://{api_url}"
-        if not api_url.endswith("/text-generation/generate_stream"):
-            api_url = f"{api_url}/text-generation/generate_stream"
-        logger.info(f"using amsv2 backend with api url: {api_url}")
-    elif backend in ["sglang"]:
-        api_url = base_url
-        if not api_url.startswith("http"):
-            api_url = f"http://{api_url}"
-        if not api_url.endswith("/generate"):
-            api_url = f"{api_url}/generate"
-        logger.info(f"using sglang backend with api url: {api_url}")
-    else:
-        raise ValueError(f"Unknown backend: {backend}")
+    match backend:
+        case "vllm" | "openai":
+            api_url = f"{base_url}{endpoint}"
+            if not api_url.startswith("http"):
+                api_url = f"http://{api_url}"
+            logger.info(f"using vllm backend with api url: {api_url}")
+        case "ppl":
+            api_url = base_url
+            logger.info(f"using ppl backend with api url: {api_url}")
+        case "trt":
+            api_url = base_url
+            if not api_url.startswith("http"):
+                api_url = f"http://{api_url}"
+            if not api_url.endswith("/v2/models/ensemble/generate_stream"):
+                api_url = f"{api_url}/v2/models/ensemble/generate_stream"
+            logger.info(f"using trt backend with api url: {api_url}")
+        case "amsv2":
+            api_url = base_url
+            if not api_url.startswith("http"):
+                api_url = f"http://{api_url}"
+            if not api_url.endswith("/text-generation/generate_stream"):
+                api_url = f"{api_url}/text-generation/generate_stream"
+            logger.info(f"using amsv2 backend with api url: {api_url}")
+        case "sglang":
+            api_url = base_url
+            if not api_url.startswith("http"):
+                api_url = f"http://{api_url}"
+            if not api_url.endswith("/generate"):
+                api_url = f"{api_url}/generate"
+            logger.info(f"using sglang backend with api url: {api_url}")
+        case _:
+            raise ValueError(f"Unknown backend: {backend}")
     
     return api_url
 
@@ -479,13 +567,43 @@ def main(args: argparse.Namespace):
         benchmark_duration = time.perf_counter() - benchmark_start_time
         
             
+#     # start benchmark
+#     benchmark_start_time = time.perf_counter()
+#     threads = []
+#     out_queue = mp.Queue()
+#     all_outputs = []
+#     # input_requests_list is a list of length num_threads, each element is a list of input requests
+#     # e.g.: input_requests_list[thread_id][request_id] refers to the request_id-th request in the thread_id-th thread
+#     input_requests_list = []
+#     for thread_id in range(args.num_threads):
+#         input_requests_i = input_requests[thread_id:] + input_requests[:thread_id]
+#         if thread_id % 2 == 1:
+#             input_requests_i = input_requests_i[::-1]
+#         input_requests_list.append(input_requests_i)
+#         if args.excute_mode in ["Thread"]:
+#             thread = benchThread(thread_id, thread_id * args.ramp_up_time / args.num_threads, backend, api_url, api_key, model_id, tokenizer, input_requests_i,
+#                                  args.best_of, args.use_beam_search, args.num_requests)
+#         else:
+#             thread = benchProcess(thread_id, thread_id * args.ramp_up_time / args.num_threads, backend, api_url, api_key, model_id, tokenizer, input_requests_i,
+#                                   args.best_of, args.use_beam_search, args.num_requests, out_queue)
+#         thread.start()
+#         threads.append(thread)
+#         logger.info(f"thread {thread_id} launched with ramp up time {thread_id * args.ramp_up_time / args.num_threads}")
+
+#     for thread in threads:
+#         if args.excute_mode in ["Thread"]:
+#             thread.join()
+#         else:
+#             outputs = out_queue.get()
+#             all_outputs += outputs
+# >>>>>>> 9b9e81ab0c98ac06e1b1fc501d35c3cc9f4a8eee
         
 
     # gather benchmark result
-    all_outputs = []
     for thread in threads:
-        outputs = thread.get_result()
-        all_outputs += outputs
+        if args.excute_mode in ["Thread"]:
+            outputs = thread.get_result()
+            all_outputs += outputs
         
     metrics, actual_output_lens = calculate_metrics(
         outputs=all_outputs,
@@ -618,6 +736,12 @@ if __name__ == "__main__":
         default="WARNING",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Log level.",
+    )
+    parser.add_argument(
+        "--excute-mode",
+        type=str,
+        default="Thread",
+        help="Excute clients in multi-thread or multi-process."
     )
 
     args = parser.parse_known_args()

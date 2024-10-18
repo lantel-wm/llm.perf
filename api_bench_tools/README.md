@@ -95,6 +95,8 @@ $ python python/benchmark_serving_num_clients.py \
     
     然而在测试启动时，若直接同时启动n个线程，将导致n个用户请求同时处于prefill阶段，这与实际情况不符，会导致测得的首字延迟大大增加。因此`benchmark_serving_num_clients.py`设置了`ramp_up_time`参数，即缓起时间。在测试开始时，n个线程不是同时启动，而是在`ramp_up_time`秒内均匀地逐个启动，模拟真实场景中用户请求交错到来的情况。默认的`ramp_up_time`为 n*0.1 秒。
 
+    多线程的模式可能会因为python的GIL遇到性能问题，可以采用多进程的方式来运行client，通过`excute_mode`参数控制，默认为`Thread`表示使用线程，设置为`Process`即可使用多进程方式运行
+
 - `api_bench_tools/python/benchmark_serving_request_rate.py`模拟了固定请求速率的场景。
 
     设置请求速率为r，每隔t秒发送一次请求，其中t服从参数为r的指数分布。
