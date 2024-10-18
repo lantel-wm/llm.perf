@@ -83,6 +83,10 @@ if [ -z "$SERVER_URL" ];then
     fi
 fi
 
+if [ -z "$LOG_LEVEL" ];then
+    LOG_LEVEL="WARNING"
+fi
+
 
 if [ "$DATASET" = "sharegpt" ]; then
     DATASET_PATH="$SHAREGPT_DATASET_PATH"
@@ -107,7 +111,7 @@ CMD="python $BENCHMARK_LLM \
 --ramp-up-time $RAMP_UP_TIME \
 --thread-stop-time $STOP_TIME \
 --log-file $PERF_BASE_PATH/log/benchmark_all_cuda.log \
---log-level WARNING \
+--log-level $LOG_LEVEL \
 $BENCHMARK_EXTENDED_OPTIONS"
 
 echo "BENCH MODEL${MODEL_TAG} TP${TP_SIZE} CLIENTS${CLIENTS} -> $CMD"

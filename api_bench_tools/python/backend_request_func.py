@@ -1,14 +1,14 @@
-import json
 import os
 import sys
 import time
+import json
 import logging
-import traceback
 import requests
+import traceback
+
 from dataclasses import dataclass, field
 from typing import List, Optional, Union
-from transformers import (AutoTokenizer, PreTrainedTokenizer,
-                          PreTrainedTokenizerFast)
+from transformers import (AutoTokenizer, PreTrainedTokenizer, PreTrainedTokenizerFast)
 
 HTTP_TIMEOUT = 6 * 60 * 60
 
@@ -33,8 +33,7 @@ class RequestFuncOutput:
     success: bool = False
     latency: float = 0.0
     ttft: float = 0.0  # Time to first token
-    itl: List[float] = field(
-        default_factory=list)  # List of inter-token latencies
+    itl: List[float] = field(default_factory=list)  # List of inter-token latencies
     prompt_len: int = 0
     output_len: int = 0
     error: str = ""

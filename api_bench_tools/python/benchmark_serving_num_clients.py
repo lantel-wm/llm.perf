@@ -1,20 +1,23 @@
+import os
+import time
+import json
+import queue
+import random
+import hashlib
+import logging
+import warnings
 import argparse
 import threading
-import json
-import logging
-import os
-import random
-import time
-import warnings
+
 import numpy as np
 
-from dataclasses import dataclass
 from datetime import datetime
-from typing import AsyncGenerator, List, Optional, Tuple
+from dataclasses import dataclass
 from transformers import PreTrainedTokenizerBase
-from backend_request_func import REQUEST_FUNCS, RequestFuncInput, RequestFuncOutput, get_tokenizer
-from dataset_sample import DATASET_SAMPLE
+from typing import AsyncGenerator, List, Optional, Tuple
 
+from dataset_sample import DATASET_SAMPLE, Request
+from backend_request_func import REQUEST_FUNCS, RequestFuncInput, RequestFuncOutput, get_tokenizer
 
 
 @dataclass
@@ -62,10 +65,108 @@ class BenchmarkMetrics:
     std_itl_ms: float
     p90_itl_ms: float
     p99_itl_ms: float
+    
+    
+class IterQueue(queue.Queue):
+    def __iter__(self):
+        while True:
+            try:
+                yield self.get_nowait()
+            except queue.Empty:
+                break
+
+
+class BenchThread(threading.Thread):
+    """Thread class for benchmarking. Each thread simulates a client sending requests to the server.
+    """
+    def __init__(
+        self, 
+        thread_id: int, 
+        ramp_up_time: float, 
+        backend: str, 
+        api_url: str, 
+        api_key: str, 
+        model_id: str, 
+        tokenizer: str, 
+        best_of: int, 
+        use_beam_search: bool, 
+        num_requests: int,
+        input_requests: List[Request] | IterQueue,
+    ):
+        super(BenchThread, self).__init__(daemon=True)
+        self.thread_id = thread_id
+        self.ramp_up_time = ramp_up_time
+        self.backend = backend
+        self.api_url = api_url
+        self.api_key = api_key
+        self.model_id = model_id
+        self.tokenizer = tokenizer
+        self.best_of = best_of
+        self.use_beam_search = use_beam_search
+        self.num_requests = num_requests
+        self.input_requests = input_requests
+        self.logger = logging.getLogger(f"thread_{thread_id}")
+        self.outputs = None
+        
+        
+    def run(self):
+        time.sleep(self.ramp_up_time)
+        self.outputs = self._benchmark()
+        
+        
+    def get_result(self):
+        self.join()
+        if self.outputs is None:
+            raise RuntimeError("Benchmark thread did not complete successfully")
+        return self.outputs
+            
+        
+    def _benchmark(self):
+        """Benchmark main function, called from each thread.
+
+        Raises:
+            ValueError: Unknown backend.
+
+        Returns:
+            List[RequestFuncOutput]: List of outputs.
+        """
+        if self.backend in REQUEST_FUNCS:
+            request_func = REQUEST_FUNCS.get(self.backend)
+        else:
+            raise ValueError(f"Unknown backend: {self.backend}")
+
+        logger.info(f"Starting benchmark for backend: {self.backend}, model_id: {self.model_id}, thread_id: {self.thread_id}, num_requests: {self.num_requests}")
+        
+        benchmark_start_time = time.perf_counter()
+        outputs = []
+        for request_id, request in enumerate(self.input_requests):
+            if args.thread_stop_time > 0 and time.perf_counter() - benchmark_start_time >= args.thread_stop_time:
+                break
+            
+            prompt, prompt_len, output_len = request.prompt, request.input_len, request.output_len
+            request_func_input = RequestFuncInput(
+                model=self.model_id,
+                prompt=prompt,
+                api_url=self.api_url,
+                api_key=self.api_key,
+                prompt_len=prompt_len,
+                output_len=output_len,
+                best_of=self.best_of,
+                use_beam_search=self.use_beam_search,
+                thread_id=self.thread_id,
+                request_id=request_id,
+                num_requests=self.num_requests,
+            )
+            logger.info(f"Request {request_id:5d} for thread {self.thread_id:4d} with prompt_len {prompt_len:5d} and output_len {output_len:5d}, prompt MD5: {hashlib.md5(prompt.encode('utf-8')).hexdigest()[:8]}")
+            outputs.append(request_func(request_func_input=request_func_input))
+            
+            # if isinstance(self.input_requests, IterQueue):
+            #     self.input_requests.task_done()
+            
+        return outputs
 
 
 def calculate_metrics(
-    input_requests_list: List[List[Tuple[str, int, int]]],
     outputs: List[RequestFuncOutput],
     dur_s: float,
     tokenizer: PreTrainedTokenizerBase,
@@ -73,7 +174,6 @@ def calculate_metrics(
     """Calculate benchmark metrics.
 
     Args:
-        input_requests_list (List[List[Tuple[str, int, int]]]): List of input requests, each element is a list of tuples of (prompt, input_len, output_len)
         outputs (List[RequestFuncOutput]): List of outputs, each element is a RequestFuncOutput
         dur_s (float): Duration of the benchmark in seconds
         tokenizer (PreTrainedTokenizerBase): transformers tokenizer
@@ -86,24 +186,27 @@ def calculate_metrics(
     max_input_tokens = 0
     max_output_tokens = 0
     completed = 0
+    
     itls: List[float] = []
     tpots: List[float] = []
     ttfts: List[float] = []
     e2es: List[float] = []
+    
     for i in range(len(outputs)):
         if outputs[i].success:
+            input_len = outputs[i].prompt_len
             output_len = outputs[i].output_len
-            actual_output_lens.append(output_len)
             thread_id = outputs[i].thread_id
             request_id = outputs[i].request_id
-            # input_request is aranged in shape (num_threads, num_requests_per_thread)
-            input_request = input_requests_list[thread_id][request_id]
-            total_input_tokens += input_request[1]
-            max_input_tokens = max(max_input_tokens, input_request[1])
+            
+            total_input_tokens += input_len
+            actual_output_lens.append(output_len)
+            max_input_tokens = max(max_input_tokens, input_len)
             max_output_tokens = max(max_output_tokens, output_len)
+            
             if output_len > 1:
-                tpots.append(
-                    (outputs[i].latency - outputs[i].ttft) / (output_len - 1))
+                tpots.append((outputs[i].latency - outputs[i].ttft) / (output_len - 1))
+                
             itls += outputs[i].itl
             ttfts.append(outputs[i].ttft)
             e2es.append(outputs[i].latency)
@@ -226,110 +329,6 @@ min_itl,max_itl,mean_itl,median_itl,std_itl,p90_itl,p99_itl")
     print(f"CSV format output:{csv_line}")
 
 
-def benchmark(
-    backend: str,
-    api_url: str,
-    model_id: str,
-    input_requests: List[Tuple[str, int, int]],
-    best_of: int,
-    use_beam_search: bool,
-    api_key: Optional[str] = None,
-    thread_id: int = -1,
-    num_requests: int = -1,
-    logger: Optional[logging.Logger] = None,
-):
-    """Benchmark main function, called from each thread.
-
-    Args:
-        backend (str): Backend inference framework. Could be "vllm", "lightllm", "sglang" or "ppl". Defaults to "vllm".
-        api_url (str): api url of the inference server.
-        model_id (str): model id of the inference server, used by vllm.
-        input_requests (List[Tuple[str, int, int]]): List of (prompt, prompt_len, output_len) tuples.
-        best_of (int): Sampling param.
-        use_beam_search (bool): Sampling param.
-        api_key (Optional[str], optional): api key. Defaults to None.
-        thread_id (int, optional): thread id. Defaults to -1.
-        num_requests (int, optional): number of requests to send. Defaults to -1.
-        logger (Optional[Logger], optional): logger. Defaults to None.
-
-    Raises:
-        ValueError: Unknown backend.
-
-    Returns:
-        List[RequestFuncOutput]: List of outputs.
-    """
-    if backend in REQUEST_FUNCS:
-        request_func = REQUEST_FUNCS.get(backend)
-    else:
-        raise ValueError(f"Unknown backend: {backend}")
-
-    logger.info(f"Starting benchmark for backend: {backend}, model_id: {model_id}, thread_id: {thread_id}, num_requests: {num_requests}")
-    
-    benchmark_start_time = time.perf_counter()
-    outputs = []
-    for request_id, request in enumerate(input_requests):
-        if args.thread_stop_time > 0 and time.perf_counter() - benchmark_start_time >= args.thread_stop_time:
-            break
-        
-        prompt, prompt_len, output_len = request
-        request_func_input = RequestFuncInput(
-            model=model_id,
-            prompt=prompt,
-            api_url=api_url,
-            api_key=api_key,
-            prompt_len=prompt_len,
-            output_len=output_len,
-            best_of=best_of,
-            use_beam_search=use_beam_search,
-            thread_id=thread_id,
-            request_id=request_id,
-            num_requests=num_requests,
-        )
-        logger.info(f"Request {request_id} for thread {thread_id} with prompt_len {prompt_len} and output_len {output_len}")
-        outputs.append(request_func(request_func_input=request_func_input))
-        
-    return outputs
-
-
-class benchThread(threading.Thread):
-    """Thread class for benchmarking. Each thread simulates a client sending requests to the server.
-    """
-    def __init__(self, thread_id, ramp_up_time, backend, api_url, api_key, model_id, tokenizer, input_requests,
-                 best_of, use_beam_search, num_requests):
-        super(benchThread, self).__init__()
-        self.thread_id = thread_id
-        self.ramp_up_time = ramp_up_time
-        self.backend = backend
-        self.api_url = api_url
-        self.api_key = api_key
-        self.model_id = model_id
-        self.tokenizer = tokenizer
-        self.input_requests = input_requests
-        self.best_of = best_of
-        self.use_beam_search = use_beam_search
-        self.num_requests = num_requests
-        self.logger = logging.getLogger(f"thread_{thread_id}")
-        
-    def run(self):
-        time.sleep(self.ramp_up_time)
-        self.outputs = benchmark(
-                backend=self.backend,
-                api_url=self.api_url,
-                api_key=self.api_key,
-                model_id=self.model_id,
-                input_requests=self.input_requests,
-                best_of=self.best_of,
-                use_beam_search=self.use_beam_search,
-                thread_id=self.thread_id,
-                num_requests=self.num_requests,
-                logger=self.logger,
-            )
-        
-    def get_result(self):
-        self.join()
-        return self.outputs
-
-
 def roll(lst: list, n: int):
     """roll a list by n positions
 
@@ -418,27 +417,69 @@ def main(args: argparse.Namespace):
         system_prompt_path=args.system_prompt_path,
     ) 
     
-    # start benchmark
-    benchmark_start_time = time.perf_counter()
-    threads = []
-    # input_requests_list is a list of length num_threads, each element is a list of input requests
-    # e.g.: input_requests_list[thread_id][request_id] refers to the request_id-th request in the thread_id-th thread
-    input_requests_list = []
-    for thread_id in range(args.num_threads):
-        input_requests_i = input_requests[thread_id:] + input_requests[:thread_id]
-        if thread_id % 2 == 1:
-            input_requests_i = input_requests_i[::-1]
-        input_requests_list.append(input_requests_i)
-        thread = benchThread(thread_id, thread_id * args.ramp_up_time / args.num_threads, backend, api_url, api_key, model_id, tokenizer, input_requests_i,
-                                args.best_of, args.use_beam_search, args.num_requests)
-        thread.start()
-        threads.append(thread)
-        logger.info(f"thread {thread_id} launched with ramp up time {thread_id * args.ramp_up_time / args.num_threads}")
+    if args.allow_repetitive_requests:
+        # repetitive sampling
+        # start benchmark
+        benchmark_start_time = time.perf_counter()
+        threads = []
+        for thread_id in range(args.num_threads):
+            input_requests_i = input_requests[thread_id:] + input_requests[:thread_id]
+            if thread_id % 2 == 1:
+                input_requests_i = input_requests_i[::-1]
+            thread = BenchThread(
+                thread_id=thread_id,
+                ramp_up_time=thread_id * args.ramp_up_time / args.num_threads, 
+                backend=backend,
+                api_url=api_url, 
+                api_key=api_key, 
+                model_id=model_id, 
+                tokenizer=tokenizer, 
+                best_of=args.best_of, 
+                use_beam_search=args.use_beam_search, 
+                num_requests=args.num_requests,
+                input_requests=input_requests_i,
+            )
+            thread.start()
+            threads.append(thread)
+            logger.info(f"thread {thread_id} launched with ramp up time {thread_id * args.ramp_up_time / args.num_threads}")
 
-    for thread in threads:
-        thread.join()
+        for thread in threads:
+            thread.join()
+            
+        benchmark_duration = time.perf_counter() - benchmark_start_time
+    else:
+        # non-repetitive sampling
+        # start benchmark
+        benchmark_start_time = time.perf_counter()
+        threads = []
+        request_queue = IterQueue()
+        request_queue.queue = queue.deque(input_requests)
         
-    benchmark_duration = time.perf_counter() - benchmark_start_time
+        for thread_id in range(args.num_threads):
+            thread = BenchThread(
+                thread_id=thread_id,
+                ramp_up_time=thread_id * args.ramp_up_time / args.num_threads, 
+                backend=backend,
+                api_url=api_url, 
+                api_key=api_key, 
+                model_id=model_id, 
+                tokenizer=tokenizer, 
+                best_of=args.best_of, 
+                use_beam_search=args.use_beam_search, 
+                num_requests=args.num_requests,
+                input_requests=request_queue,
+            )
+            thread.start()
+            threads.append(thread)
+            logger.info(f"thread {thread_id} launched with ramp up time {thread_id * args.ramp_up_time / args.num_threads}")
+        
+        for thread in threads:
+            thread.join()
+        
+        benchmark_duration = time.perf_counter() - benchmark_start_time
+        
+            
+        
 
     # gather benchmark result
     all_outputs = []
@@ -447,7 +488,6 @@ def main(args: argparse.Namespace):
         all_outputs += outputs
         
     metrics, actual_output_lens = calculate_metrics(
-        input_requests_list=input_requests_list,
         outputs=all_outputs,
         dur_s=benchmark_duration,
         tokenizer=tokenizer,
@@ -493,6 +533,12 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Path to the dataset.")
+    parser.add_argument(
+        "--allow-repetitive-requests",
+        action="store_true",
+        default=False,
+        help="Allow repetitive requests sent to the server, see README.md for more details.",
+    )
     parser.add_argument(
         "--model",
         type=str,
@@ -574,7 +620,7 @@ if __name__ == "__main__":
         help="Log level.",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_known_args()
     logging.basicConfig(
         format='[%(levelname)s] %(asctime)s %(filename)s:%(lineno)d %(message)s',
         level=args.log_level,
