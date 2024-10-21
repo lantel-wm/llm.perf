@@ -3,10 +3,10 @@
 #-------------------------------------------------------------------------------------------------------
 # 测试的推理后端，支持vllm、ppl、lightllm、amsv2、sglang
 # export BACKEND="vllm"
-# export BACKEND="ppl"
+export BACKEND="ppl"
 # export BACKEND="lightllm"
 # export BACKEND="amsv2"
-export BACKEND="sglang" 
+# export BACKEND="sglang" 
 # 模型标签，仅起标识作用，请自行保证模型标签与实际测试的模型一致
 export MODEL_TAG="llama2-7b_tp1_fp16"
 # system prompt开关，1表示使用system prompt，0表示不使用system prompt（system prompt文件路径在配置参数中指定）
