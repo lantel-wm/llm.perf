@@ -107,11 +107,12 @@ CMD="python $BENCHMARK_LLM \
 --dataset-path $DATASET_PATH \
 --num-requests $PROMPTS \
 --num-turns $TURNS \
---num-threads $CLIENTS \
+--num-clients $CLIENTS \
 --ramp-up-time $RAMP_UP_TIME \
---thread-stop-time $STOP_TIME \
+--stop-time $STOP_TIME \
 --log-file $PERF_BASE_PATH/log/benchmark_all_cuda.log \
 --log-level $LOG_LEVEL \
+--execute-mode $CLIENT_EXECUTE_MODE \
 $BENCHMARK_EXTENDED_OPTIONS"
 
 echo "BENCH MODEL${MODEL_TAG} TP${TP_SIZE} CLIENTS${CLIENTS} -> $CMD"

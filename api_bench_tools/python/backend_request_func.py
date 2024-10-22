@@ -22,7 +22,7 @@ class RequestFuncInput:
     model: str
     best_of: int = 1
     use_beam_search: bool = False
-    thread_id: Optional[int] = None
+    client_id: Optional[int] = None
     request_id: int = 0
     num_requests: int = 1
 
@@ -37,7 +37,7 @@ class RequestFuncOutput:
     prompt_len: int = 0
     output_len: int = 0
     error: str = ""
-    thread_id: Optional[int] = None
+    client_id: Optional[int] = None
     request_id: int = 0
 
 # Since vllm must support Python 3.8, we can't use str.removeprefix(prefix)
@@ -77,7 +77,7 @@ def request_openai_completions(
     # curl -X POST 10.198.31.25:8000/v1/completions -H "Authorization: Bearer YOUR_API_KEY" -d '{"model": "/mnt/llm2/llm_perf/hf_models/llama-7b-hf", "prompt": "Once upon a time", "temperature": 0.0, "best_of": 1, "max_tokens": 100, "min_tokens": 100, "stream": true, "ignore_eos": true}'
 
     output = RequestFuncOutput(
-        thread_id=request_func_input.thread_id, 
+        client_id=request_func_input.client_id, 
         request_id=request_func_input.request_id,
         prompt_len=request_func_input.prompt_len,
     )
@@ -130,7 +130,7 @@ def request_openai_completions(
             else:
                 output.success = False
                 output.error = f"HTTP Status Code: {response.status_code}\nresponse.text: {response.text}"
-                logger.warning(f"thread {request_func_input.thread_id} request {request_func_input.request_id} failed: {output.error}")
+                logger.warning(f"thread {request_func_input.client_id} request {request_func_input.request_id} failed: {output.error}")
 
     except Exception:
         output.success = False
@@ -150,12 +150,12 @@ def request_ppl_completions_old(
     channel = grpc.insecure_channel(api_url)
     stub = llm_pb2_grpc.LLMServiceStub(channel)
     
-    thread_id = request_func_input.thread_id
+    client_id = request_func_input.client_id
     request_id = request_func_input.request_id
     num_requests = request_func_input.num_requests
     
     request = llm_pb2.Request(
-        id=thread_id * num_requests + request_id,
+        id=client_id * num_requests + request_id,
         prompt=request_func_input.prompt,
         temperature=0.0,
         stopping_parameters=llm_pb2.StoppingCriteriaParameters(
@@ -165,10 +165,10 @@ def request_ppl_completions_old(
     )
     batched_request = llm_pb2.BatchedRequest(req=[request])
     
-    logger.debug(f"request_ppl_completions: id {thread_id * num_requests + request_id} prompt {request.prompt}")
+    logger.debug(f"request_ppl_completions: id {client_id * num_requests + request_id} prompt {request.prompt}")
     
     output = RequestFuncOutput(
-        thread_id=request_func_input.thread_id, 
+        client_id=request_func_input.client_id, 
         request_id=request_func_input.request_id,
         prompt_len=request_func_input.prompt_len
     )
@@ -184,7 +184,7 @@ def request_ppl_completions_old(
         for response in response_stream:
             for rsp in response.rsp:
                 if rsp.status == llm_pb2.Status.FAILED:
-                    logger.warning(f"Request {request.id} (thread {thread_id} request {request_id}) failed")
+                    logger.warning(f"Request {request.id} (thread {client_id} request {request_id}) failed")
                     output.success = False
                     output.error = "Response Status: FAILED"
                     break
@@ -230,7 +230,7 @@ def request_ppl_completions(
     channel = grpc.insecure_channel(api_url)
     stub = llm_pb2_grpc.LLMServiceStub(channel)
     
-    thread_id = request_func_input.thread_id
+    client_id = request_func_input.client_id
     request_id = request_func_input.request_id
     num_requests = request_func_input.num_requests
     
@@ -243,7 +243,7 @@ def request_ppl_completions(
     )
     
     request = llm_pb2.Request(
-        id=thread_id * num_requests + request_id,
+        id=client_id * num_requests + request_id,
         prompt=request_func_input.prompt,
         choosing_parameters=choose_NextToken_parameters,
         stopping_parameters=llm_pb2.StoppingCriteriaParameters(
@@ -253,10 +253,10 @@ def request_ppl_completions(
     )
     batched_request = llm_pb2.BatchedRequest(req=[request])
     
-    logger.debug(f"request_ppl_completions: id {thread_id * num_requests + request_id} prompt {request.prompt}")
+    logger.debug(f"request_ppl_completions: id {client_id * num_requests + request_id} prompt {request.prompt}")
     
     output = RequestFuncOutput(
-        thread_id=request_func_input.thread_id, 
+        client_id=request_func_input.client_id, 
         request_id=request_func_input.request_id,
         prompt_len=request_func_input.prompt_len
     )
@@ -272,7 +272,7 @@ def request_ppl_completions(
         for response in response_stream:
             for rsp in response.rsp:
                 if rsp.status == llm_pb2.Status.FAILED:
-                    logger.warning(f"Request {request.id} (thread {thread_id} request {request_id}) failed")
+                    logger.warning(f"Request {request.id} (thread {client_id} request {request_id}) failed")
                     output.success = False
                     output.error = "Response Status: FAILED"
                     break
@@ -329,7 +329,7 @@ def request_trtllm_generate_stream(
         "stream": True,
     }
     output = RequestFuncOutput(
-        thread_id=request_func_input.thread_id,
+        client_id=request_func_input.client_id,
         request_id=request_func_input.request_id,
         prompt_len=request_func_input.prompt_len
     )
@@ -374,7 +374,7 @@ def request_trtllm_generate_stream(
             else:
                 output.success = False
                 output.error = f"HTTP Status Code: {response.status_code}\nresponse.reason: {response.reason}"
-                logger.warning(f"thread {request_func_input.thread_id} request {request_func_input.request_id} failed: {output.error}")
+                logger.warning(f"thread {request_func_input.client_id} request {request_func_input.request_id} failed: {output.error}")
 
     except Exception:
         output.success = False
@@ -411,7 +411,7 @@ def request_lightllm_generate_stream(
     logger.debug(f"request_lightllm_generate_stream: payload={payload}, headers={headers}")
     
     output = RequestFuncOutput(
-        thread_id=request_func_input.thread_id,
+        client_id=request_func_input.client_id,
         request_id=request_func_input.request_id,
         prompt_len=request_func_input.prompt_len
     )
@@ -457,7 +457,7 @@ def request_lightllm_generate_stream(
             else:
                 output.success = False
                 output.error = f"HTTP Status Code: {response.status_code}\nresponse.reason: {response.reason}"
-                logger.warning(f"thread {request_func_input.thread_id} request {request_func_input.request_id} failed: {output.error}")
+                logger.warning(f"thread {request_func_input.client_id} request {request_func_input.request_id} failed: {output.error}")
 
 
     except Exception:
@@ -511,7 +511,7 @@ def request_amsv2_generate_stream(
     logger.debug(f"request_amsv2_generate_stream: payload={payload}, headers={headers}")
         
     output = RequestFuncOutput(
-        thread_id=request_func_input.thread_id,
+        client_id=request_func_input.client_id,
         request_id=request_func_input.request_id,
         prompt_len=request_func_input.prompt_len
     )
@@ -557,7 +557,7 @@ def request_amsv2_generate_stream(
             else:
                 output.success = False
                 output.error = f"HTTP Status Code: {response.status_code}\nresponse.reason: {response.reason}"
-                logger.warning(f"thread {request_func_input.thread_id} request {request_func_input.request_id} failed: {output.error}")
+                logger.warning(f"thread {request_func_input.client_id} request {request_func_input.request_id} failed: {output.error}")
 
     except Exception:
         output.success = False
@@ -594,7 +594,7 @@ def request_sglang_generate(
     logger.debug(f"request_sglang_generate: payload={payload}, headers={headers}")
     
     output = RequestFuncOutput(
-        thread_id=request_func_input.thread_id, 
+        client_id=request_func_input.client_id, 
         request_id=request_func_input.request_id,
         prompt_len=request_func_input.prompt_len,
     )
@@ -643,7 +643,7 @@ def request_sglang_generate(
             else:
                 output.success = False
                 output.error = f"HTTP Status Code: {response.status_code}\nresponse.text: {response.text}"
-                logger.warning(f"thread {request_func_input.thread_id} request {request_func_input.request_id} failed: {output.error}")
+                logger.warning(f"thread {request_func_input.client_id} request {request_func_input.request_id} failed: {output.error}")
 
     except Exception:
         output.success = False
@@ -684,7 +684,7 @@ if __name__ == '__main__':
         prompt_len=150,
         output_len=300,
         # model="/mnt/llm2/llm_perf/hf_models/llama-7b-hf",
-        thread_id=0,
+        client_id=0,
         request_id=0,
         num_requests=1024,
     )

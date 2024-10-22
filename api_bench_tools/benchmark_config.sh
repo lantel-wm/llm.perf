@@ -10,9 +10,12 @@ export BACKEND="ppl"
 # 模型标签，仅起标识作用，请自行保证模型标签与实际测试的模型一致
 export MODEL_TAG="llama2-7b_tp1_fp16"
 # system prompt开关，1表示使用system prompt，0表示不使用system prompt（system prompt文件路径在配置参数中指定）
-export ENABLE_SYSTEM_PROMPT=0
+export ENABLE_SYSTEM_PROMPT=1
 # 是否允许重复采样请求，1表示允许，0表示不允许
 export ALLOW_REPETITIVE_REQUESTS=0
+# 用户启动方式
+# export CLIENT_EXECUTE_MODE="Thread"
+export CLIENT_EXECUTE_MODE="Process"
 # 测试使用的数据集，支持sharegpt和xiaomi (数据集路径在配置参数中指定)
 export DATASET="sharegpt"
 # export DATASET="xiaomi"
@@ -22,8 +25,8 @@ export NUM_CLIENTS="1 5 10 20 30 40 50 100 200 300"
 export STOP_TIME=300
 # 日志等级
 # export LOG_LEVEL="DEBUG" # 输出每个请求的详细信息
-# export LOG_LEVEL="INFO" # 输出每个请求的inlen, outlen和内容的 MD5
-export LOG_LEVEL="WARNING" # 输出报错的请求
+export LOG_LEVEL="INFO" # 输出每个请求的inlen, outlen和内容的 MD5
+# export LOG_LEVEL="WARNING" # 输出报错的请求
 
 
 
