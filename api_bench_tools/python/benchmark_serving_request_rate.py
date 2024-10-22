@@ -10,8 +10,11 @@ from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 import numpy as np
-from backend_request_func_async import (ASYNC_REQUEST_FUNCS, RequestFuncInput,
-                                  RequestFuncOutput)
+from backend_request_func_async import (
+    ASYNC_REQUEST_FUNCS,
+    RequestFuncInput,
+    RequestFuncOutput,
+)
 from transformers import PreTrainedTokenizerBase
 
 try:
@@ -19,9 +22,12 @@ try:
 except ImportError:
     from backend_request_func import get_tokenizer
 
-logging.basicConfig(level=logging.WARNING,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S')
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
 
 @dataclass
 class BenchmarkMetrics:
@@ -36,7 +42,7 @@ class BenchmarkMetrics:
     request_throughput: float
     in_out_throughput: float
     output_throughput: float
-    
+
     min_ttft_ms: float
     max_ttft_ms: float
     mean_ttft_ms: float
@@ -44,7 +50,7 @@ class BenchmarkMetrics:
     std_ttft_ms: float
     p90_ttft_ms: float
     p99_ttft_ms: float
-    
+
     min_tpot_ms: float
     max_tpot_ms: float
     mean_tpot_ms: float
@@ -52,7 +58,7 @@ class BenchmarkMetrics:
     std_tpot_ms: float
     p90_tpot_ms: float
     p99_tpot_ms: float
-    
+
     min_e2e_ms: float
     max_e2e_ms: float
     mean_e2e_ms: float
@@ -60,7 +66,7 @@ class BenchmarkMetrics:
     std_e2e_ms: float
     p90_e2e_ms: float
     p99_e2e_ms: float
-    
+
     min_itl_ms: float
     max_itl_ms: float
     mean_itl_ms: float
@@ -85,8 +91,10 @@ def sample_sharegpt_requests(
     # Filter out the conversations with less than 2 turns.
     dataset = [data for data in dataset if len(data["conversations"]) >= 2]
     # Only keep the first two turns of each conversation.
-    dataset = [(data["conversations"][0]["value"],
-                data["conversations"][1]["value"]) for data in dataset]
+    dataset = [
+        (data["conversations"][0]["value"], data["conversations"][1]["value"])
+        for data in dataset
+    ]
 
     # Shuffle the dataset.
     random.shuffle(dataset)
@@ -99,17 +107,18 @@ def sample_sharegpt_requests(
 
         # Tokenize the prompts and completions.
         prompt = dataset[i][0]
-        
+
         if system_prompt_path is not None:
             with open(system_prompt_path) as f:
-                prompt = f.read() + '\n' + prompt
-        
+                prompt = f.read() + "\n" + prompt
+
         prompt_token_ids = tokenizer(prompt).input_ids
         completion = dataset[i][1]
         completion_token_ids = tokenizer(completion).input_ids
         prompt_len = len(prompt_token_ids)
-        output_len = len(completion_token_ids
-                         ) if fixed_output_len is None else fixed_output_len
+        output_len = (
+            len(completion_token_ids) if fixed_output_len is None else fixed_output_len
+        )
         if prompt_len < 4 or output_len < 4:
             # Prune too short sequences.
             continue
@@ -117,13 +126,13 @@ def sample_sharegpt_requests(
             # Prune too long sequences.
             continue
         filtered_dataset.append((prompt, prompt_len, output_len))
-        
+
         if i == len(dataset) - 1:
             # If we have reached the end of the dataset, then we need to shuffle
             # the dataset again.
             random.shuffle(filtered_dataset)
             i = 0
-            
+
     return filtered_dataset
 
 
@@ -175,14 +184,15 @@ def calculate_metrics(
             completed += 1
         else:
             actual_output_lens.append(0)
-            
+
     total_output_tokens = sum(actual_output_lens)
 
     if completed == 0:
         warnings.warn(
             "All requests failed. This is likely due to a misconfiguration "
             "on the benchmark arguments.",
-            stacklevel=2)
+            stacklevel=2,
+        )
     metrics = BenchmarkMetrics(
         completed=completed,
         successful_rate=completed / len(outputs),
@@ -195,15 +205,14 @@ def calculate_metrics(
         request_throughput=completed / dur_s,
         in_out_throughput=(total_input_tokens + total_output_tokens) / dur_s,
         output_throughput=total_output_tokens / dur_s,
-        
-        min_ttft_ms=np.min(ttfts or 0) * 1000,  # ttfts is empty if streaming is not supported by backend
+        min_ttft_ms=np.min(ttfts or 0)
+        * 1000,  # ttfts is empty if streaming is not supported by backend
         max_ttft_ms=np.max(ttfts or 0) * 1000,
         mean_ttft_ms=np.mean(ttfts or 0) * 1000,
         median_ttft_ms=np.median(ttfts or 0) * 1000,
         std_ttft_ms=np.std(ttfts or 0) * 1000,
         p90_ttft_ms=np.percentile(ttfts or 0, 90) * 1000,
         p99_ttft_ms=np.percentile(ttfts or 0, 99) * 1000,
-        
         min_tpot_ms=np.min(tpots or 0) * 1000,
         max_tpot_ms=np.max(tpots or 0) * 1000,
         mean_tpot_ms=np.mean(tpots or 0) * 1000,
@@ -211,7 +220,6 @@ def calculate_metrics(
         std_tpot_ms=np.std(tpots or 0) * 1000,
         p90_tpot_ms=np.percentile(tpots or 0, 90) * 1000,
         p99_tpot_ms=np.percentile(tpots or 0, 99) * 1000,
-        
         min_e2e_ms=np.min(e2es or 0) * 1000,
         max_e2e_ms=np.max(e2es or 0) * 1000,
         mean_e2e_ms=np.mean(e2es or 0) * 1000,
@@ -219,7 +227,6 @@ def calculate_metrics(
         std_e2e_ms=np.std(e2es or 0) * 1000,
         p90_e2e_ms=np.percentile(e2es or 0, 90) * 1000,
         p99_e2e_ms=np.percentile(e2es or 0, 99) * 1000,
-        
         min_itl_ms=np.min(itls or 0) * 1000,
         max_itl_ms=np.max(itls or 0) * 1000,
         mean_itl_ms=np.mean(itls or 0) * 1000,
@@ -233,13 +240,15 @@ def calculate_metrics(
 
 
 def dump_metrics_and_results(metrics: BenchmarkMetrics):
-    print("CSV header output:\
+    print(
+        "CSV header output:\
 success_rate,qps,avg_inlen,avg_outlen,max_inlen,max_outlen,o_tps,io_tps,\
 min_ttft,max_ttft,mean_ttft,median_ttft,std_ttft,p90_ttft,p99_ttft,\
 min_tpot,max_tpot,mean_tpot,median_tpot,std_tpot,p90_tpot,p99_tpot,\
 min_e2e,max_e2e,mean_e2e,median_e2e,std_e2e,p90_e2e,p99_e2e,\
-min_itl,max_itl,mean_itl,median_itl,std_itl,p90_itl,p99_itl")
-          
+min_itl,max_itl,mean_itl,median_itl,std_itl,p90_itl,p99_itl"
+    )
+
     csv_line = ""
     csv_line += f"{metrics.successful_rate:.3f},"
     csv_line += f"{metrics.request_throughput:.3f},"
@@ -249,7 +258,7 @@ min_itl,max_itl,mean_itl,median_itl,std_itl,p90_itl,p99_itl")
     csv_line += f"{metrics.max_output_tokens},"
     csv_line += f"{metrics.output_throughput:.3f},"
     csv_line += f"{metrics.in_out_throughput:.3f},"
-    
+
     csv_line += f"{metrics.min_ttft_ms:.3f},"
     csv_line += f"{metrics.max_ttft_ms:.3f},"
     csv_line += f"{metrics.mean_ttft_ms:.3f},"
@@ -257,7 +266,7 @@ min_itl,max_itl,mean_itl,median_itl,std_itl,p90_itl,p99_itl")
     csv_line += f"{metrics.std_ttft_ms:.3f},"
     csv_line += f"{metrics.p90_ttft_ms:.3f},"
     csv_line += f"{metrics.p99_ttft_ms:.3f},"
-    
+
     csv_line += f"{metrics.min_tpot_ms:.3f},"
     csv_line += f"{metrics.max_tpot_ms:.3f},"
     csv_line += f"{metrics.mean_tpot_ms:.3f},"
@@ -265,7 +274,7 @@ min_itl,max_itl,mean_itl,median_itl,std_itl,p90_itl,p99_itl")
     csv_line += f"{metrics.std_tpot_ms:.3f},"
     csv_line += f"{metrics.p90_tpot_ms:.3f},"
     csv_line += f"{metrics.p99_tpot_ms:.3f},"
-    
+
     csv_line += f"{metrics.min_e2e_ms:.3f},"
     csv_line += f"{metrics.max_e2e_ms:.3f},"
     csv_line += f"{metrics.mean_e2e_ms:.3f},"
@@ -273,7 +282,7 @@ min_itl,max_itl,mean_itl,median_itl,std_itl,p90_itl,p99_itl")
     csv_line += f"{metrics.std_e2e_ms:.3f},"
     csv_line += f"{metrics.p90_e2e_ms:.3f},"
     csv_line += f"{metrics.p99_e2e_ms:.3f},"
-    
+
     csv_line += f"{metrics.min_itl_ms:.3f},"
     csv_line += f"{metrics.max_itl_ms:.3f},"
     csv_line += f"{metrics.mean_itl_ms:.3f},"
@@ -281,7 +290,7 @@ min_itl,max_itl,mean_itl,median_itl,std_itl,p90_itl,p99_itl")
     csv_line += f"{metrics.std_itl_ms:.3f},"
     csv_line += f"{metrics.p90_itl_ms:.3f},"
     csv_line += f"{metrics.p99_itl_ms:.3f}"
-    
+
     print(f"CSV format output:{csv_line}")
 
 
@@ -315,9 +324,12 @@ async def benchmark(
             use_beam_search=use_beam_search,
             request_id=request_id,
         )
-        logging.debug(f"request_id: {request_id}, prompt_len: {prompt_len}, output_len: {output_len}")
+        logging.debug(
+            f"request_id: {request_id}, prompt_len: {prompt_len}, output_len: {output_len}"
+        )
         tasks.append(
-            asyncio.create_task(request_func(request_func_input=request_func_input)))
+            asyncio.create_task(request_func(request_func_input=request_func_input))
+        )
     outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
 
     benchmark_duration = time.perf_counter() - benchmark_start_time
@@ -327,7 +339,7 @@ async def benchmark(
         outputs=outputs,
         dur_s=benchmark_duration,
     )
-    
+
     dump_metrics_and_results(metrics)
 
 
@@ -358,7 +370,7 @@ def main(args: argparse.Namespace):
         tokenizer=tokenizer,
         fixed_output_len=args.sharegpt_output_len,
     )
-        
+
     benchmark_result = asyncio.run(
         benchmark(
             backend=backend,
@@ -368,11 +380,14 @@ def main(args: argparse.Namespace):
             best_of=args.best_of,
             use_beam_search=args.use_beam_search,
             request_rate=args.request_rate,
-        ))
+        )
+    )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Benchmark the online serving throughput.")
+    parser = argparse.ArgumentParser(
+        description="Benchmark the online serving throughput."
+    )
     parser.add_argument(
         "--backend",
         type=str,
@@ -391,10 +406,9 @@ if __name__ == "__main__":
         default="/v1/completions",
         help="API endpoint.",
     )
-    parser.add_argument("--dataset-path",
-                        type=str,
-                        default=None,
-                        help="Path to the dataset.")
+    parser.add_argument(
+        "--dataset-path", type=str, default=None, help="Path to the dataset."
+    )
     parser.add_argument(
         "--model",
         type=str,
@@ -404,15 +418,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tokenizer",
         type=str,
-        help=
-        "Name or path of the tokenizer, if not using the default tokenizer.",  # noqa: E501
+        help="Name or path of the tokenizer, if not using the default tokenizer.",  # noqa: E501
     )
     parser.add_argument(
         "--best-of",
         type=int,
         default=1,
-        help="Generates `best_of` sequences per prompt and "
-        "returns the best one.",
+        help="Generates `best_of` sequences per prompt and " "returns the best one.",
     )
     parser.add_argument("--use-beam-search", action="store_true")
     parser.add_argument(
@@ -426,7 +438,8 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Output length for each request. Overrides the output length "
-        "from the ShareGPT dataset.")
+        "from the ShareGPT dataset.",
+    )
     parser.add_argument(
         "--trust-remote-code",
         action="store_true",

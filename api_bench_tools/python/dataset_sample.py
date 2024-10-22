@@ -43,13 +43,15 @@ def sample_sharegpt_requests(
     # Load the dataset.
     with open(dataset_path) as f:
         dataset = json.load(f)
-    
-    num_turns *= 2 # Each turn has a prompt and a completion.
+
+    num_turns *= 2  # Each turn has a prompt and a completion.
     # Filter out the conversations with less than num_turns.
     dataset = [data for data in dataset if len(data["conversations"]) >= num_turns]
     # Only keep the first num_turns of each conversation.
-    dataset = [[data["conversations"][turn]["value"] for turn in range(num_turns)] for data in dataset]
-
+    dataset = [
+        [data["conversations"][turn]["value"] for turn in range(num_turns)]
+        for data in dataset
+    ]
 
     # Shuffle the dataset.
     random.seed(0)
@@ -60,29 +62,29 @@ def sample_sharegpt_requests(
     for i in range(len(dataset)):
         if len(filtered_dataset) == num_requests:
             break
-        
+
         prompt = ""
         for j in range(num_turns - 1):
             prompt += dataset[i][j] + "\n"
         completion = dataset[i][-1]
-        
+
         if system_prompt_path is not None:
             with open(system_prompt_path) as f:
-                prompt = f.read() + '\n' + prompt
-            
-        
+                prompt = f.read() + "\n" + prompt
+
         # Tokenize the prompts and completions.
         prompt_token_ids = tokenizer(prompt).input_ids
         completion_token_ids = tokenizer(completion).input_ids
         prompt_len = len(prompt_token_ids)
-        output_len = len(completion_token_ids
-                         ) if fixed_output_len is None else fixed_output_len
+        output_len = (
+            len(completion_token_ids) if fixed_output_len is None else fixed_output_len
+        )
         if prompt_len < 4 or output_len < 4:
             # Prune too short sequences.
             continue
-        
+
         filtered_dataset.append(Request(prompt, prompt_len, output_len))
-        
+
         if i == len(dataset) - 1:
             i = 0
 
@@ -120,10 +122,10 @@ def sample_xiaomi_requests(
     # Load the dataset.
     with open(dataset_path) as f:
         dataset = [json.loads(line) for line in f.readlines()]
-        
+
     dataset = [[message["content"] for message in data["messages"]] for data in dataset]
     dataset = ["\n".join(data) for data in dataset]
-    
+
     # Shuffle the dataset.
     random.seed(0)
     random.shuffle(dataset)
@@ -133,13 +135,13 @@ def sample_xiaomi_requests(
     for i in range(len(dataset)):
         if len(filtered_dataset) == num_requests:
             break
-        
+
         prompt = dataset[i]
-        
+
         if system_prompt_path is not None:
             with open(system_prompt_path) as f:
-                prompt = f.read() + '\n' + prompt
-        
+                prompt = f.read() + "\n" + prompt
+
         # Tokenize the prompts and completions.
         prompt_token_ids = tokenizer(prompt).input_ids
         prompt_len = len(prompt_token_ids)
@@ -147,9 +149,9 @@ def sample_xiaomi_requests(
         if prompt_len < 4 or output_len < 4:
             # Prune too short sequences.
             continue
-        
+
         filtered_dataset.append(Request(prompt, prompt_len, output_len))
-        
+
         if i == len(dataset) - 1:
             i = 0
 
@@ -167,7 +169,9 @@ if __name__ == "__main__":
         dataset_path="/mnt/llm/workspace/zhaozhiyu/work/llm.perf/api_bench_tools/datasets/xiaomi_data1_medium.jsonl",
         num_requests=100,
         num_turns=2,
-        tokenizer=AutoTokenizer.from_pretrained("/mnt/llm2/llm_perf/hf_models/llama-7b-hf"),
+        tokenizer=AutoTokenizer.from_pretrained(
+            "/mnt/llm2/llm_perf/hf_models/llama-7b-hf"
+        ),
     )
-    
+
     print(requests[0])
