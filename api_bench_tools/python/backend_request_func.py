@@ -17,10 +17,10 @@ HTTP_TIMEOUT = 6 * 60 * 60
 class RequestFuncInput:
     prompt: str
     api_url: str
-    api_key: Optional[str]
     prompt_len: int
     output_len: int
-    model: str
+    api_key: Optional[str] = None
+    model: Optional[str] = None
     best_of: int = 1
     use_beam_search: bool = False
     client_id: Optional[int] = None
@@ -137,7 +137,7 @@ def request_openai_completions(
                 output.success = False
                 output.error = f"HTTP Status Code: {response.status_code}\nresponse.text: {response.text}"
                 logger.warning(
-                    f"thread {request_func_input.client_id} request {request_func_input.request_id} failed: {output.error}"
+                    f"client {request_func_input.client_id} request {request_func_input.request_id} failed: {output.error}"
                 )
 
     except Exception:
@@ -285,7 +285,7 @@ def request_ppl_completions(
             for rsp in response.rsp:
                 if rsp.status == llm_pb2.Status.FAILED:
                     logger.warning(
-                        f"Request {request.id} (thread {client_id} request {request_id}) failed"
+                        f"Request {request.id} (client {client_id} request {request_id}) failed"
                     )
                     output.success = False
                     output.error = "Response Status: FAILED"
@@ -723,14 +723,14 @@ REQUEST_FUNCS = {
 
 if __name__ == "__main__":
     import os
-
     os.environ["http_proxy"] = ""
     os.environ["HTTP_PROXY"] = ""
     os.environ["HTTPS_PROXY"] = ""
     os.environ["https_proxy"] = ""
+    
     request_func_input = RequestFuncInput(
         prompt="The future of ai is",
-        api_url="127.0.0.1:23333",
+        api_url="127.0.0.1:33332",
         # api_url="http://10.198.31.25:8000/v1/completions",
         # api_url='https://devsft.studio.sensecoreapi.cn/gpu8-sensechat590-20240719/text-generation/generate_stream',
         # api_key='eyJhbGciOiJFUzI1NiIsImtpZCI6ImNiMTY1YTA1LWY1ZTctNDkzYS1hNjMwLTcyOTM3YmE1YTM0ZiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMzcxNjgzMTEsImlhdCI6MTcyMTYzNTUxMSwiaXNzIjoiaHR0cHM6Ly9pYW0taW50ZXJuYWwuc2Vuc2Vjb3JlYXBpLmNuLyIsImp0aSI6IjQ1YmYzMWE4LTdmZjItNDM5OC04NmMwLTQwMDg5ZjU0M2M3NiIsInJlc291cmNlX2lkIjoiZDkxN2JkYmQtNDViMC0xMWVmLTkwMjktM2U2NDkxYjJlNmY1Iiwic3ViIjoiNjMwZmI3MTI2MWViNjgxMjAwMjNmZTY1YWNjNWFiNDgiLCJ1cmkiOiJkZXZzZnQuc3R1ZGlvLnNlbnNlY29yZWFwaS5jbi9ncHU4LXNlbnNlY2hhdDU5MC0yMDI0MDcxOSJ9.4Dt712ONtlKHVcCTv9AVpCBLTo0osDXHHqIzzDsIsLTU1rGKqsjBQaW4xPKM-pIGbVoSb1KzyO1T4gTFSU6Xgw',
@@ -745,7 +745,7 @@ if __name__ == "__main__":
     # output = request_openai_completions(request_func_input)
     # output = request_amsv2_generate_stream(request_func_input)
     output = request_ppl_completions(request_func_input)
-    output = request_sglang_generate(request_func_input)
+    # output = request_sglang_generate(request_func_input)
     print(f"output.success: {output.success}")
     print(f"output.generated_text: {output.generated_text}")
     print(f"output.prompt_len: {output.prompt_len}")

@@ -1,32 +1,25 @@
-import argparse
+import os
+import time
+import json
+import random
+import hashlib
 import asyncio
 import logging
-import json
-import os
-import random
-import time
+import argparse
 import warnings
+
+import numpy as np
+
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
-import numpy as np
 from backend_request_func_async import (
     ASYNC_REQUEST_FUNCS,
     RequestFuncInput,
     RequestFuncOutput,
+    get_tokenizer,
 )
 from transformers import PreTrainedTokenizerBase
-
-try:
-    from vllm.transformers_utils.tokenizer import get_tokenizer
-except ImportError:
-    from backend_request_func import get_tokenizer
-
-logging.basicConfig(
-    level=logging.WARNING,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
 
 
 @dataclass
@@ -205,8 +198,8 @@ def calculate_metrics(
         request_throughput=completed / dur_s,
         in_out_throughput=(total_input_tokens + total_output_tokens) / dur_s,
         output_throughput=total_output_tokens / dur_s,
-        min_ttft_ms=np.min(ttfts or 0)
-        * 1000,  # ttfts is empty if streaming is not supported by backend
+        # ttfts is empty if streaming is not supported by backend
+        min_ttft_ms=np.min(ttfts or 0) * 1000,
         max_ttft_ms=np.max(ttfts or 0) * 1000,
         mean_ttft_ms=np.mean(ttfts or 0) * 1000,
         median_ttft_ms=np.median(ttfts or 0) * 1000,
@@ -301,14 +294,17 @@ async def benchmark(
     input_requests: List[Tuple[str, int, int]],
     best_of: int,
     use_beam_search: bool,
+    client_id: int,
     request_rate: float,
+    num_requests: int,
 ):
     if backend in ASYNC_REQUEST_FUNCS:
         request_func = ASYNC_REQUEST_FUNCS[backend]
     else:
         raise ValueError(f"Unknown backend: {backend}")
-
-    print(f"Traffic request rate: {request_rate}")
+    
+    logger = logging.getLogger()
+    logger.info(f"Traffic request rate: {request_rate}")
 
     benchmark_start_time = time.perf_counter()
     tasks: List[asyncio.Task] = []
@@ -322,10 +318,12 @@ async def benchmark(
             output_len=output_len,
             best_of=best_of,
             use_beam_search=use_beam_search,
+            client_id=client_id,
             request_id=request_id,
+            num_requests=num_requests,
         )
-        logging.debug(
-            f"request_id: {request_id}, prompt_len: {prompt_len}, output_len: {output_len}"
+        logger.info(
+            f"Request {request_id:4d}, prompt_len={prompt_len:4d}, output_len={output_len:4d}, md5={hashlib.md5(prompt.encode('utf-8')).hexdigest()[:8]}"
         )
         tasks.append(
             asyncio.create_task(request_func(request_func_input=request_func_input))
@@ -334,7 +332,7 @@ async def benchmark(
 
     benchmark_duration = time.perf_counter() - benchmark_start_time
 
-    metrics, actual_output_lens = calculate_metrics(
+    metrics, _ = calculate_metrics(
         input_requests=input_requests,
         outputs=outputs,
         dur_s=benchmark_duration,
@@ -349,7 +347,10 @@ def main(args: argparse.Namespace):
     os.environ["HTTP_PROXY"] = ""
     os.environ["HTTPS_PROXY"] = ""
     os.environ["https_proxy"] = ""
-    # print(args)
+
+    logger = logging.getLogger()
+    logger.info(args)
+
     random.seed(0)
     np.random.seed(0)
 
@@ -379,7 +380,9 @@ def main(args: argparse.Namespace):
             input_requests=input_requests,
             best_of=args.best_of,
             use_beam_search=args.use_beam_search,
+            client_id=0,
             request_rate=args.request_rate,
+            num_requests=args.num_requests,
         )
     )
 
@@ -412,7 +415,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model",
         type=str,
-        required=True,
+        # required=True,
         help="Name of the model.",
     )
     parser.add_argument(
@@ -465,6 +468,24 @@ if __name__ == "__main__":
         default=None,
         help="Path to the system prompt file. None for no system prompt.",
     )
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        default=None,
+        help="Path to the log file. Log file is shared by python and shell scripts, None for no python log.",
+    )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="WARNING",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Log level.",
+    )
 
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
+    logging.basicConfig(
+        format="[%(levelname)s] %(asctime)s %(filename)s:%(lineno)d %(message)s",
+        level=args.log_level,
+        filename=args.log_file,
+    )
     main(args)

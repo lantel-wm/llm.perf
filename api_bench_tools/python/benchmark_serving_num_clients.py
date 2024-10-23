@@ -1,77 +1,25 @@
 import os
 import time
-import json
 import queue
-import random
 import hashlib
 import logging
-import warnings
 import argparse
 import threading
 
 import numpy as np
 import multiprocessing as mp
 
-from datetime import datetime
 from dataclasses import dataclass
-from transformers import PreTrainedTokenizerBase
-from typing import AsyncGenerator, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from dataset_sample import DATASET_SAMPLE, Request
+from benchmark_metrics import BenchmarkMetrics, get_metrics
 from backend_request_func import (
     REQUEST_FUNCS,
     RequestFuncInput,
     RequestFuncOutput,
     get_tokenizer,
 )
-
-
-@dataclass
-class BenchmarkMetrics:
-    completed: int
-    successful_rate: float
-    total_input: int
-    total_output: int
-    mean_input_tokens: float
-    mean_output_tokens: float
-    max_input_tokens: int
-    max_output_tokens: int
-    request_throughput: float
-    in_out_throughput: float
-    output_throughput: float
-
-    min_ttft_ms: float
-    max_ttft_ms: float
-    mean_ttft_ms: float
-    median_ttft_ms: float
-    std_ttft_ms: float
-    p90_ttft_ms: float
-    p99_ttft_ms: float
-
-    min_tpot_ms: float
-    max_tpot_ms: float
-    mean_tpot_ms: float
-    median_tpot_ms: float
-    std_tpot_ms: float
-    p90_tpot_ms: float
-    p99_tpot_ms: float
-
-    min_e2e_ms: float
-    max_e2e_ms: float
-    mean_e2e_ms: float
-    median_e2e_ms: float
-    std_e2e_ms: float
-    p90_e2e_ms: float
-    p99_e2e_ms: float
-
-    min_itl_ms: float
-    max_itl_ms: float
-    mean_itl_ms: float
-    median_itl_ms: float
-    std_itl_ms: float
-    p90_itl_ms: float
-    p99_itl_ms: float
-
 
 class IterQueue(queue.Queue):
     def __init__(self, request_list: List[Request]):
@@ -144,7 +92,6 @@ class BenchThread(threading.Thread):
         self.use_beam_search = use_beam_search
         self.num_requests = num_requests
         self.input_requests = input_requests
-        self.logger = logging.getLogger(f"thread_{client_id}")
         self.out_queue = out_queue
 
     def run(self):
@@ -160,7 +107,6 @@ class BenchThread(threading.Thread):
             api_key=self.api_key,
             client_id=self.client_id,
             num_requests=self.num_requests,
-            logger=self.logger,
         )
         self.out_queue.put(outputs)
 
@@ -200,7 +146,6 @@ class BenchProcess(mp.Process):
         self.best_of = best_of
         self.use_beam_search = use_beam_search
         self.num_requests = num_requests
-        self.logger = logging.getLogger(f"process_{client_id}")
         self.out_queue = out_queue
 
     def run(self):
@@ -216,7 +161,6 @@ class BenchProcess(mp.Process):
             use_beam_search=self.use_beam_search,
             client_id=self.client_id,
             num_requests=self.num_requests,
-            logger=self.logger,
         )
         self.out_queue.put(outputs)
 
@@ -232,7 +176,6 @@ def benchmark(
     api_key: Optional[str] = None,
     client_id: int = -1,
     num_requests: int = -1,
-    logger: Optional[logging.Logger] = None,
 ) -> List[RequestFuncOutput]:
     """Benchmark main function, called from each client.
 
@@ -259,6 +202,7 @@ def benchmark(
     else:
         raise ValueError(f"Unknown backend: {backend}")
 
+    logger = logging.getLogger()
     logger.info(
         f"Starting benchmark for backend: {backend}, model_id: {model_id}, client_id: {client_id}, num_requests: {num_requests}, stop_time: {stop_time}"
     )
@@ -346,47 +290,18 @@ def calculate_metrics(
 
     total_output_tokens = sum(actual_output_lens)
 
-    metrics = BenchmarkMetrics(
+    metrics = get_metrics(
         completed=completed,
-        successful_rate=completed / len(outputs),
-        total_input=total_input_tokens,
-        total_output=total_output_tokens,
-        mean_input_tokens=total_input_tokens / completed,
-        mean_output_tokens=total_output_tokens / completed,
+        succeeded=len(outputs),
+        total_input_tokens=total_output_tokens,
+        total_output_tokens=total_output_tokens,
         max_input_tokens=max_input_tokens,
         max_output_tokens=max_output_tokens,
-        request_throughput=completed / dur_s,
-        in_out_throughput=(total_input_tokens + total_output_tokens) / dur_s,
-        output_throughput=total_output_tokens / dur_s,
-        # ttfts is empty if streaming is not supported by backend
-        min_ttft_ms=np.min(ttfts or 0) * 1000,
-        max_ttft_ms=np.max(ttfts or 0) * 1000,
-        mean_ttft_ms=np.mean(ttfts or 0) * 1000,
-        median_ttft_ms=np.median(ttfts or 0) * 1000,
-        std_ttft_ms=np.std(ttfts or 0) * 1000,
-        p90_ttft_ms=np.percentile(ttfts or 0, 90) * 1000,
-        p99_ttft_ms=np.percentile(ttfts or 0, 99) * 1000,
-        min_tpot_ms=np.min(tpots or 0) * 1000,
-        max_tpot_ms=np.max(tpots or 0) * 1000,
-        mean_tpot_ms=np.mean(tpots or 0) * 1000,
-        median_tpot_ms=np.median(tpots or 0) * 1000,
-        std_tpot_ms=np.std(tpots or 0) * 1000,
-        p90_tpot_ms=np.percentile(tpots or 0, 90) * 1000,
-        p99_tpot_ms=np.percentile(tpots or 0, 99) * 1000,
-        min_e2e_ms=np.min(e2es or 0) * 1000,
-        max_e2e_ms=np.max(e2es or 0) * 1000,
-        mean_e2e_ms=np.mean(e2es or 0) * 1000,
-        median_e2e_ms=np.median(e2es or 0) * 1000,
-        std_e2e_ms=np.std(e2es or 0) * 1000,
-        p90_e2e_ms=np.percentile(e2es or 0, 90) * 1000,
-        p99_e2e_ms=np.percentile(e2es or 0, 99) * 1000,
-        min_itl_ms=np.min(itls or 0) * 1000,
-        max_itl_ms=np.max(itls or 0) * 1000,
-        mean_itl_ms=np.mean(itls or 0) * 1000,
-        median_itl_ms=np.median(itls or 0) * 1000,
-        std_itl_ms=np.std(itls or 0) * 1000,
-        p90_itl_ms=np.percentile(itls or 0, 90) * 1000,
-        p99_itl_ms=np.percentile(itls or 0, 99) * 1000,
+        dur_s=dur_s,
+        ttfts=ttfts,
+        tpots=tpots,
+        e2es=e2es,
+        itls=itls,
     )
 
     return metrics, actual_output_lens
@@ -466,6 +381,7 @@ def api_url_standardize(base_url: str, endpoint: str, backend: str) -> str:
     Returns:
         str: standardized api url
     """
+    logger = logging.getLogger()
     match backend:
         case "vllm" | "openai":
             api_url = f"{base_url}{endpoint}"
@@ -543,6 +459,7 @@ def main(args: argparse.Namespace):
     os.environ["HTTPS_PROXY"] = ""
     os.environ["https_proxy"] = ""
 
+    logger = logging.getLogger()
     logger.info(args)
     assert args.num_requests > 0, "Number of threads must be greater than 0."
 
@@ -779,5 +696,4 @@ if __name__ == "__main__":
         level=args.log_level,
         filename=args.log_file,
     )
-    logger = logging.getLogger()
     main(args)
