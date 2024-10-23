@@ -9,47 +9,10 @@ import traceback
 
 from typing import List, Optional, Union
 from dataclasses import dataclass, field
-from transformers import AutoTokenizer, PreTrainedTokenizer, PreTrainedTokenizerFast
+from utils import RequestFuncInput, RequestFuncOutput
 
 
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=6 * 60 * 60)
-
-
-@dataclass
-class RequestFuncInput:
-    prompt: str
-    api_url: str
-    prompt_len: int
-    output_len: int
-    best_of: int = 1
-    api_key: Optional[str] = None
-    model: Optional[str] = None
-    use_beam_search: bool = False
-    client_id: Optional[int] = None
-    request_id: int = 0
-    num_requests: int = 1
-
-
-@dataclass
-class RequestFuncOutput:
-    generated_text: str = ""
-    success: bool = False
-    latency: float = 0.0
-    ttft: float = 0.0  # Time to first token
-    itl: List[float] = field(default_factory=list)  # List of inter-token latencies
-    prompt_len: int = 0
-    output_len: int = 0
-    error: str = ""
-    client_id: Optional[int] = None
-    request_id: int = 0
-
-
-# Since vllm must support Python 3.8, we can't use str.removeprefix(prefix)
-# introduced in Python 3.9
-def remove_prefix(text: str, prefix: str) -> str:
-    if text.startswith(prefix):
-        return text[len(prefix) :]
-    return text
 
 
 # curl -X POST http://10.198.31.25:8000/v1/completions -H "Content-Type: application/json" -d '{"model": "/mnt/llm2/llm_perf/hf_models/llama-7b-hf", "prompt": "Once upon a time", "temperature": 0.0, "best_of": 1, "max_tokens": 10, "min_tokens": 10, "stream": true, "ignore_eos": true}'
@@ -101,7 +64,7 @@ async def async_request_openai_completions(
                         if not chunk_bytes:
                             continue
 
-                        chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data: ")
+                        chunk = str.removeprefix(chunk_bytes.decode("utf-8"), "data: ")
                         if chunk == "[DONE]":
                             latency = time.perf_counter() - st
                             logger.debug(
@@ -189,7 +152,7 @@ async def async_request_openai_chat_completions(
                         if not chunk_bytes:
                             continue
 
-                        chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data: ")
+                        chunk = str.removeprefix(chunk_bytes.decode("utf-8"), "data: ")
                         if chunk == "[DONE]":
                             latency = time.perf_counter() - st
                         else:
@@ -389,15 +352,6 @@ async def async_request_ppl_completions(
     return output
 
 
-def get_tokenizer(
-    pretrained_model_name_or_path: str, trust_remote_code: bool
-) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast]:
-    return AutoTokenizer.from_pretrained(
-        pretrained_model_name_or_path=pretrained_model_name_or_path,
-        trust_remote_code=trust_remote_code,
-    )
-
-
 ASYNC_REQUEST_FUNCS = {
     "vllm": async_request_openai_completions,
     "ppl": async_request_ppl_completions,
@@ -406,11 +360,12 @@ ASYNC_REQUEST_FUNCS = {
 
 if __name__ == "__main__":
     import os
+
     os.environ["http_proxy"] = ""
     os.environ["HTTP_PROXY"] = ""
     os.environ["HTTPS_PROXY"] = ""
     os.environ["https_proxy"] = ""
-    
+
     request_func_input = RequestFuncInput(
         prompt="The future of ai is",
         api_url="127.0.0.1:33332",
@@ -424,7 +379,7 @@ if __name__ == "__main__":
         request_id=0,
         num_requests=1024,
     )
-    
+
     request_func = async_request_ppl_completions
     output = asyncio.run(request_func(request_func_input))
     print(f"output.success: {output.success}")

@@ -9,130 +9,27 @@ import argparse
 import warnings
 
 import numpy as np
+import multiprocessing as mp
 
-from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
+from typing import AsyncGenerator, List, Optional, Tuple
 
-from backend_request_func_async import (
-    ASYNC_REQUEST_FUNCS,
+from utils import (
+    Request,
     RequestFuncInput,
     RequestFuncOutput,
+    IterMpQueue,
     get_tokenizer,
+    api_url_standardize,
 )
-from transformers import PreTrainedTokenizerBase
-
-
-@dataclass
-class BenchmarkMetrics:
-    completed: int
-    successful_rate: float
-    total_input: int
-    total_output: int
-    mean_input_tokens: float
-    mean_output_tokens: float
-    max_input_tokens: int
-    max_output_tokens: int
-    request_throughput: float
-    in_out_throughput: float
-    output_throughput: float
-
-    min_ttft_ms: float
-    max_ttft_ms: float
-    mean_ttft_ms: float
-    median_ttft_ms: float
-    std_ttft_ms: float
-    p90_ttft_ms: float
-    p99_ttft_ms: float
-
-    min_tpot_ms: float
-    max_tpot_ms: float
-    mean_tpot_ms: float
-    median_tpot_ms: float
-    std_tpot_ms: float
-    p90_tpot_ms: float
-    p99_tpot_ms: float
-
-    min_e2e_ms: float
-    max_e2e_ms: float
-    mean_e2e_ms: float
-    median_e2e_ms: float
-    std_e2e_ms: float
-    p90_e2e_ms: float
-    p99_e2e_ms: float
-
-    min_itl_ms: float
-    max_itl_ms: float
-    mean_itl_ms: float
-    median_itl_ms: float
-    std_itl_ms: float
-    p90_itl_ms: float
-    p99_itl_ms: float
-
-
-def sample_sharegpt_requests(
-    dataset_path: str,
-    num_requests: int,
-    tokenizer: PreTrainedTokenizerBase,
-    fixed_output_len: Optional[int] = None,
-    system_prompt_path: Optional[str] = None,
-) -> List[Tuple[str, int, int]]:
-    if fixed_output_len is not None and fixed_output_len < 4:
-        raise ValueError("output_len too small")
-    # Load the dataset.
-    with open(dataset_path) as f:
-        dataset = json.load(f)
-    # Filter out the conversations with less than 2 turns.
-    dataset = [data for data in dataset if len(data["conversations"]) >= 2]
-    # Only keep the first two turns of each conversation.
-    dataset = [
-        (data["conversations"][0]["value"], data["conversations"][1]["value"])
-        for data in dataset
-    ]
-
-    # Shuffle the dataset.
-    random.shuffle(dataset)
-
-    # Filter out sequences that are too long or too short
-    filtered_dataset: List[Tuple[str, int, int]] = []
-    for i in range(len(dataset)):
-        if len(filtered_dataset) == num_requests:
-            break
-
-        # Tokenize the prompts and completions.
-        prompt = dataset[i][0]
-
-        if system_prompt_path is not None:
-            with open(system_prompt_path) as f:
-                prompt = f.read() + "\n" + prompt
-
-        prompt_token_ids = tokenizer(prompt).input_ids
-        completion = dataset[i][1]
-        completion_token_ids = tokenizer(completion).input_ids
-        prompt_len = len(prompt_token_ids)
-        output_len = (
-            len(completion_token_ids) if fixed_output_len is None else fixed_output_len
-        )
-        if prompt_len < 4 or output_len < 4:
-            # Prune too short sequences.
-            continue
-        if prompt_len > 1024 or prompt_len + output_len > 2048:
-            # Prune too long sequences.
-            continue
-        filtered_dataset.append((prompt, prompt_len, output_len))
-
-        if i == len(dataset) - 1:
-            # If we have reached the end of the dataset, then we need to shuffle
-            # the dataset again.
-            random.shuffle(filtered_dataset)
-            i = 0
-
-    return filtered_dataset
+from benchmark_metrics import calculate_metrics, dump_metrics
+from backend_request_func_async import ASYNC_REQUEST_FUNCS
+from dataset_sampler import DATASET_SAMPLER
 
 
 async def get_request(
-    input_requests: List[Tuple[str, int, int]],
+    input_requests: IterMpQueue,
     request_rate: float,
-) -> AsyncGenerator[Tuple[str, int, int], None]:
+) -> AsyncGenerator[Request, None]:
     input_requests = iter(input_requests)
     for request_id, request in enumerate(input_requests):
         yield request_id, request
@@ -147,151 +44,11 @@ async def get_request(
         await asyncio.sleep(interval)
 
 
-def calculate_metrics(
-    input_requests: List[Tuple[str, int, int]],
-    outputs: List[RequestFuncOutput],
-    dur_s: float,
-) -> Tuple[BenchmarkMetrics, List[int]]:
-    actual_output_lens: List[int] = []
-    total_input_tokens = 0
-    max_input_tokens = 0
-    max_output_tokens = 0
-    completed = 0
-    itls: List[float] = []
-    e2es: List[float] = []
-    tpots: List[float] = []
-    ttfts: List[float] = []
-    e2es: List[float] = []
-    for i in range(len(outputs)):
-        if outputs[i].success:
-            output_len = outputs[i].output_len
-            actual_output_lens.append(output_len)
-            total_input_tokens += input_requests[i][1]
-            max_input_tokens = max(max_input_tokens, input_requests[i][1])
-            max_output_tokens = max(max_output_tokens, output_len)
-            if output_len > 1:
-                tpots.append((outputs[i].latency - outputs[i].ttft) / (output_len - 1))
-            itls += outputs[i].itl
-            ttfts.append(outputs[i].ttft)
-            e2es.append(outputs[i].latency)
-            completed += 1
-        else:
-            actual_output_lens.append(0)
-
-    total_output_tokens = sum(actual_output_lens)
-
-    if completed == 0:
-        warnings.warn(
-            "All requests failed. This is likely due to a misconfiguration "
-            "on the benchmark arguments.",
-            stacklevel=2,
-        )
-    metrics = BenchmarkMetrics(
-        completed=completed,
-        successful_rate=completed / len(outputs),
-        total_input=total_input_tokens,
-        total_output=total_output_tokens,
-        mean_input_tokens=total_input_tokens / completed,
-        mean_output_tokens=total_output_tokens / completed,
-        max_input_tokens=max_input_tokens,
-        max_output_tokens=max_output_tokens,
-        request_throughput=completed / dur_s,
-        in_out_throughput=(total_input_tokens + total_output_tokens) / dur_s,
-        output_throughput=total_output_tokens / dur_s,
-        # ttfts is empty if streaming is not supported by backend
-        min_ttft_ms=np.min(ttfts or 0) * 1000,
-        max_ttft_ms=np.max(ttfts or 0) * 1000,
-        mean_ttft_ms=np.mean(ttfts or 0) * 1000,
-        median_ttft_ms=np.median(ttfts or 0) * 1000,
-        std_ttft_ms=np.std(ttfts or 0) * 1000,
-        p90_ttft_ms=np.percentile(ttfts or 0, 90) * 1000,
-        p99_ttft_ms=np.percentile(ttfts or 0, 99) * 1000,
-        min_tpot_ms=np.min(tpots or 0) * 1000,
-        max_tpot_ms=np.max(tpots or 0) * 1000,
-        mean_tpot_ms=np.mean(tpots or 0) * 1000,
-        median_tpot_ms=np.median(tpots or 0) * 1000,
-        std_tpot_ms=np.std(tpots or 0) * 1000,
-        p90_tpot_ms=np.percentile(tpots or 0, 90) * 1000,
-        p99_tpot_ms=np.percentile(tpots or 0, 99) * 1000,
-        min_e2e_ms=np.min(e2es or 0) * 1000,
-        max_e2e_ms=np.max(e2es or 0) * 1000,
-        mean_e2e_ms=np.mean(e2es or 0) * 1000,
-        median_e2e_ms=np.median(e2es or 0) * 1000,
-        std_e2e_ms=np.std(e2es or 0) * 1000,
-        p90_e2e_ms=np.percentile(e2es or 0, 90) * 1000,
-        p99_e2e_ms=np.percentile(e2es or 0, 99) * 1000,
-        min_itl_ms=np.min(itls or 0) * 1000,
-        max_itl_ms=np.max(itls or 0) * 1000,
-        mean_itl_ms=np.mean(itls or 0) * 1000,
-        median_itl_ms=np.median(itls or 0) * 1000,
-        std_itl_ms=np.std(itls or 0) * 1000,
-        p90_itl_ms=np.percentile(itls or 0, 90) * 1000,
-        p99_itl_ms=np.percentile(itls or 0, 99) * 1000,
-    )
-
-    return metrics, actual_output_lens
-
-
-def dump_metrics_and_results(metrics: BenchmarkMetrics):
-    print(
-        "CSV header output:\
-success_rate,qps,avg_inlen,avg_outlen,max_inlen,max_outlen,o_tps,io_tps,\
-min_ttft,max_ttft,mean_ttft,median_ttft,std_ttft,p90_ttft,p99_ttft,\
-min_tpot,max_tpot,mean_tpot,median_tpot,std_tpot,p90_tpot,p99_tpot,\
-min_e2e,max_e2e,mean_e2e,median_e2e,std_e2e,p90_e2e,p99_e2e,\
-min_itl,max_itl,mean_itl,median_itl,std_itl,p90_itl,p99_itl"
-    )
-
-    csv_line = ""
-    csv_line += f"{metrics.successful_rate:.3f},"
-    csv_line += f"{metrics.request_throughput:.3f},"
-    csv_line += f"{metrics.mean_input_tokens:.3f},"
-    csv_line += f"{metrics.mean_output_tokens:.3f},"
-    csv_line += f"{metrics.max_input_tokens},"
-    csv_line += f"{metrics.max_output_tokens},"
-    csv_line += f"{metrics.output_throughput:.3f},"
-    csv_line += f"{metrics.in_out_throughput:.3f},"
-
-    csv_line += f"{metrics.min_ttft_ms:.3f},"
-    csv_line += f"{metrics.max_ttft_ms:.3f},"
-    csv_line += f"{metrics.mean_ttft_ms:.3f},"
-    csv_line += f"{metrics.median_ttft_ms:.3f},"
-    csv_line += f"{metrics.std_ttft_ms:.3f},"
-    csv_line += f"{metrics.p90_ttft_ms:.3f},"
-    csv_line += f"{metrics.p99_ttft_ms:.3f},"
-
-    csv_line += f"{metrics.min_tpot_ms:.3f},"
-    csv_line += f"{metrics.max_tpot_ms:.3f},"
-    csv_line += f"{metrics.mean_tpot_ms:.3f},"
-    csv_line += f"{metrics.median_tpot_ms:.3f},"
-    csv_line += f"{metrics.std_tpot_ms:.3f},"
-    csv_line += f"{metrics.p90_tpot_ms:.3f},"
-    csv_line += f"{metrics.p99_tpot_ms:.3f},"
-
-    csv_line += f"{metrics.min_e2e_ms:.3f},"
-    csv_line += f"{metrics.max_e2e_ms:.3f},"
-    csv_line += f"{metrics.mean_e2e_ms:.3f},"
-    csv_line += f"{metrics.median_e2e_ms:.3f},"
-    csv_line += f"{metrics.std_e2e_ms:.3f},"
-    csv_line += f"{metrics.p90_e2e_ms:.3f},"
-    csv_line += f"{metrics.p99_e2e_ms:.3f},"
-
-    csv_line += f"{metrics.min_itl_ms:.3f},"
-    csv_line += f"{metrics.max_itl_ms:.3f},"
-    csv_line += f"{metrics.mean_itl_ms:.3f},"
-    csv_line += f"{metrics.median_itl_ms:.3f},"
-    csv_line += f"{metrics.std_itl_ms:.3f},"
-    csv_line += f"{metrics.p90_itl_ms:.3f},"
-    csv_line += f"{metrics.p99_itl_ms:.3f}"
-
-    print(f"CSV format output:{csv_line}")
-
-
 async def benchmark(
     backend: str,
     api_url: str,
     model_id: str,
-    input_requests: List[Tuple[str, int, int]],
+    input_requests: List[Request],
     best_of: int,
     use_beam_search: bool,
     client_id: int,
@@ -302,14 +59,18 @@ async def benchmark(
         request_func = ASYNC_REQUEST_FUNCS[backend]
     else:
         raise ValueError(f"Unknown backend: {backend}")
-    
+
     logger = logging.getLogger()
     logger.info(f"Traffic request rate: {request_rate}")
 
     benchmark_start_time = time.perf_counter()
     tasks: List[asyncio.Task] = []
     async for request_id, request in get_request(input_requests, request_rate):
-        prompt, prompt_len, output_len = request
+        prompt, prompt_len, output_len = (
+            request.prompt,
+            request.input_len,
+            request.output_len,
+        )
         request_func_input = RequestFuncInput(
             model=model_id,
             prompt=prompt,
@@ -338,7 +99,7 @@ async def benchmark(
         dur_s=benchmark_duration,
     )
 
-    dump_metrics_and_results(metrics)
+    dump_metrics(metrics)
 
 
 def main(args: argparse.Namespace):
@@ -358,19 +119,22 @@ def main(args: argparse.Namespace):
     model_id = args.model
     tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
 
-    if args.base_url is not None:
-        api_url = f"{args.base_url}{args.endpoint}"
-    else:
-        api_url = f"http://{args.host}:{args.port}{args.endpoint}"
-
+    api_url = api_url_standardize(args.api_url, args.endpoint, args.backend)
+    api_key = (
+        args.api_key if args.api_key is not None else os.environ.get("AMSV2_API_KEY")
+    )
     tokenizer = get_tokenizer(tokenizer_id, trust_remote_code=args.trust_remote_code)
 
-    input_requests = sample_sharegpt_requests(
+    # sample requests
+    dataset_sample = DATASET_SAMPLER[args.dataset]
+    sampled_requests: List[Request] = dataset_sample(
         dataset_path=args.dataset_path,
         num_requests=args.num_requests,
+        num_turns=args.num_turns,
         tokenizer=tokenizer,
-        fixed_output_len=args.sharegpt_output_len,
+        system_prompt_path=args.system_prompt_path,
     )
+    input_requests_queue = IterMpQueue(sampled_requests)
 
     benchmark_result = asyncio.run(
         benchmark(

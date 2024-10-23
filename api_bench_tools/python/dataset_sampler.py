@@ -1,18 +1,13 @@
 import json
 import random
-from dataclasses import dataclass
-from typing import AsyncGenerator, List, Optional, Tuple
+
+from typing import List, Optional
 from transformers import PreTrainedTokenizerBase, AutoTokenizer
 
-
-@dataclass
-class Request:
-    prompt: str
-    input_len: int
-    output_len: int
+from utils import Request
 
 
-def sample_sharegpt_requests(
+def sharegpt_requests_sampler(
     dataset_path: str,
     num_requests: int,
     num_turns: int,
@@ -91,7 +86,7 @@ def sample_sharegpt_requests(
     return filtered_dataset
 
 
-def sample_xiaomi_requests(
+def xiaomi_requests_sampler(
     dataset_path: str,
     num_requests: int,
     num_turns: int,
@@ -158,14 +153,14 @@ def sample_xiaomi_requests(
     return filtered_dataset
 
 
-DATASET_SAMPLE = {
-    "sharegpt": sample_sharegpt_requests,
-    "xiaomi": sample_xiaomi_requests,
+DATASET_SAMPLER = {
+    "sharegpt": sharegpt_requests_sampler,
+    "xiaomi": xiaomi_requests_sampler,
 }
 
 
 if __name__ == "__main__":
-    requests = sample_xiaomi_requests(
+    requests = xiaomi_requests_sampler(
         dataset_path="/mnt/llm/workspace/zhaozhiyu/work/llm.perf/api_bench_tools/datasets/xiaomi_data1_medium.jsonl",
         num_requests=100,
         num_turns=2,

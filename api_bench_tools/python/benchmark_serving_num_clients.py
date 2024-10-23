@@ -6,55 +6,22 @@ import logging
 import argparse
 import threading
 
-import numpy as np
 import multiprocessing as mp
 
-from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
-from dataset_sample import DATASET_SAMPLE, Request
-from benchmark_metrics import BenchmarkMetrics, get_metrics
-from backend_request_func import (
-    REQUEST_FUNCS,
+from dataset_sampler import DATASET_SAMPLER
+from backend_request_func import REQUEST_FUNCS
+from benchmark_metrics import dump_metrics, calculate_metrics
+from utils import (
+    Request,
     RequestFuncInput,
     RequestFuncOutput,
+    IterQueue,
+    IterMpQueue,
     get_tokenizer,
+    api_url_standardize,
 )
-
-class IterQueue(queue.Queue):
-    def __init__(self, request_list: List[Request]):
-        super(IterQueue, self).__init__()
-        self.queue = queue.deque(request_list)
-
-    def __iter__(self):
-        while True:
-            try:
-                yield self.get_nowait()
-            except queue.Empty:
-                break
-
-
-class IterMpQueue:
-    def __init__(self, request_list: List[Request]):
-        # Create an internal instance of mp.Queue
-        self.mp_queue = mp.Queue()
-        # Pre-fill the multiprocessing queue if necessary
-        for request in request_list:
-            self.mp_queue.put(request)
-
-    def __iter__(self):
-        while True:
-            try:
-                yield self.mp_queue.get_nowait()
-            except queue.Empty:
-                break
-
-    def empty(self) -> bool:
-        return self.mp_queue.empty()
-
-    def drain(self):
-        while not self.mp_queue.empty():
-            self.mp_queue.get()
 
 
 class BenchThread(threading.Thread):
@@ -76,8 +43,8 @@ class BenchThread(threading.Thread):
         best_of: int,
         use_beam_search: bool,
         num_requests: int,
-        input_requests: List[Request] | IterQueue,
-        out_queue: queue.Queue,
+        input_queue: List[Request] | IterQueue,
+        output_queue: queue.Queue,
     ):
         super(BenchThread, self).__init__(daemon=True)
         self.client_id = client_id
@@ -91,8 +58,8 @@ class BenchThread(threading.Thread):
         self.best_of = best_of
         self.use_beam_search = use_beam_search
         self.num_requests = num_requests
-        self.input_requests = input_requests
-        self.out_queue = out_queue
+        self.input_queue = input_queue
+        self.output_queue = output_queue
 
     def run(self):
         time.sleep(self.ramp_up_time)
@@ -100,7 +67,7 @@ class BenchThread(threading.Thread):
             backend=self.backend,
             api_url=self.api_url,
             model_id=self.model_id,
-            input_requests=self.input_requests,
+            input_queue=self.input_queue,
             stop_time=self.stop_time - self.ramp_up_time,
             best_of=self.best_of,
             use_beam_search=self.use_beam_search,
@@ -108,7 +75,7 @@ class BenchThread(threading.Thread):
             client_id=self.client_id,
             num_requests=self.num_requests,
         )
-        self.out_queue.put(outputs)
+        self.output_queue.put(outputs)
 
 
 class BenchProcess(mp.Process):
@@ -130,8 +97,8 @@ class BenchProcess(mp.Process):
         best_of: int,
         use_beam_search: bool,
         num_requests: int,
-        input_requests: List[Request] | IterMpQueue,
-        out_queue: mp.Queue,
+        input_queue: List[Request] | IterMpQueue,
+        output_queue: mp.Queue,
     ):
         super(BenchProcess, self).__init__(daemon=True)
         self.client_id = client_id
@@ -142,11 +109,11 @@ class BenchProcess(mp.Process):
         self.api_key = api_key
         self.model_id = model_id
         self.tokenizer = tokenizer
-        self.input_requests = input_requests
+        self.input_queue = input_queue
         self.best_of = best_of
         self.use_beam_search = use_beam_search
         self.num_requests = num_requests
-        self.out_queue = out_queue
+        self.output_queue = output_queue
 
     def run(self):
         time.sleep(self.ramp_up_time)
@@ -155,21 +122,21 @@ class BenchProcess(mp.Process):
             api_url=self.api_url,
             api_key=self.api_key,
             model_id=self.model_id,
-            input_requests=self.input_requests,
+            input_queue=self.input_queue,
             stop_time=self.stop_time - self.ramp_up_time,
             best_of=self.best_of,
             use_beam_search=self.use_beam_search,
             client_id=self.client_id,
             num_requests=self.num_requests,
         )
-        self.out_queue.put(outputs)
+        self.output_queue.put(outputs)
 
 
 def benchmark(
     backend: str,
     api_url: str,
     model_id: str,
-    input_requests: List[Request],
+    input_queue: List[Request] | IterQueue | IterMpQueue,
     stop_time: float,
     best_of: int,
     use_beam_search: bool,
@@ -183,7 +150,7 @@ def benchmark(
         backend (str): Backend inference framework. Could be "vllm", "lightllm", "sglang" or "ppl". Defaults to "vllm".
         api_url (str): api url of the inference server.
         model_id (str): model id of the inference server, used by vllm.
-        input_requests (List[Tuple[str, int, int]]): List of (prompt, prompt_len, output_len) tuples.
+        input_requests (List[Request] | IterQueue | IterMpQueue): List of requests to send.
         best_of (int): Sampling param.
         use_beam_search (bool): Sampling param.
         api_key (Optional[str], optional): api key. Defaults to None.
@@ -207,11 +174,12 @@ def benchmark(
         f"Starting benchmark for backend: {backend}, model_id: {model_id}, client_id: {client_id}, num_requests: {num_requests}, stop_time: {stop_time}"
     )
 
+    logger.info(f"id(input_queue): {id(input_queue)}")
+
     benchmark_start_time = time.perf_counter()
     outputs = []
-    for request_id, request in enumerate(input_requests):
+    for request_id, request in enumerate(input_queue):
         if stop_time > 0 and time.perf_counter() - benchmark_start_time >= stop_time:
-            logger.info(f"Stop time reached, stopping benchmark for client {client_id}")
             break
 
         prompt, prompt_len, output_len = (
@@ -237,184 +205,12 @@ def benchmark(
         )
         outputs.append(request_func(request_func_input=request_func_input))
 
+    logger.info(f"Stop time reached, stopping benchmark for client {client_id}")
+
     return outputs
 
 
-def calculate_metrics(
-    outputs: List[RequestFuncOutput],
-    dur_s: float,
-) -> Tuple[BenchmarkMetrics, List[int]]:
-    """Calculate benchmark metrics.
-
-    Args:
-        outputs (List[RequestFuncOutput]): List of outputs, each element is a RequestFuncOutput
-        dur_s (float): Duration of the benchmark in seconds
-        tokenizer (PreTrainedTokenizerBase): transformers tokenizer
-
-    Returns:
-        Tuple[BenchmarkMetrics, List[int]]: BenchmarkMetrics and List of actual output lengths
-    """
-    actual_output_lens = []
-    total_input_tokens = 0
-    max_input_tokens = 0
-    max_output_tokens = 0
-    completed = 0
-
-    itls: List[float] = []
-    tpots: List[float] = []
-    ttfts: List[float] = []
-    e2es: List[float] = []
-
-    for i in range(len(outputs)):
-        if outputs[i].success:
-            input_len = outputs[i].prompt_len
-            output_len = outputs[i].output_len
-            # client_id = outputs[i].client_id
-            # request_id = outputs[i].request_id
-
-            total_input_tokens += input_len
-            actual_output_lens.append(output_len)
-            max_input_tokens = max(max_input_tokens, input_len)
-            max_output_tokens = max(max_output_tokens, output_len)
-
-            if output_len > 1:
-                tpots.append((outputs[i].latency - outputs[i].ttft) / (output_len - 1))
-
-            itls += outputs[i].itl
-            ttfts.append(outputs[i].ttft)
-            e2es.append(outputs[i].latency)
-            completed += 1
-
-        else:
-            actual_output_lens.append(0)
-
-    total_output_tokens = sum(actual_output_lens)
-
-    metrics = get_metrics(
-        completed=completed,
-        succeeded=len(outputs),
-        total_input_tokens=total_output_tokens,
-        total_output_tokens=total_output_tokens,
-        max_input_tokens=max_input_tokens,
-        max_output_tokens=max_output_tokens,
-        dur_s=dur_s,
-        ttfts=ttfts,
-        tpots=tpots,
-        e2es=e2es,
-        itls=itls,
-    )
-
-    return metrics, actual_output_lens
-
-
-def dump_metrics_and_results(
-    metrics: BenchmarkMetrics,
-):
-    """Dumps metrics and results to stdout in CSV format.
-
-    Args:
-        metrics (BenchmarkMetrics): Metrics to dump.
-    """
-    print(
-        "CSV header output:\
-completed,success_rate,qps,total_inlen,total_outlen,avg_inlen,avg_outlen,max_inlen,max_outlen,o_tps,io_tps,\
-min_ttft,max_ttft,mean_ttft,median_ttft,std_ttft,p90_ttft,p99_ttft,\
-min_tpot,max_tpot,mean_tpot,median_tpot,std_tpot,p90_tpot,p99_tpot,\
-min_e2e,max_e2e,mean_e2e,median_e2e,std_e2e,p90_e2e,p99_e2e,\
-min_itl,max_itl,mean_itl,median_itl,std_itl,p90_itl,p99_itl"
-    )
-
-    csv_line = ""
-    csv_line += f"{metrics.completed},"
-    csv_line += f"{metrics.successful_rate:.3f},"
-    csv_line += f"{metrics.request_throughput:.3f},"
-    csv_line += f"{metrics.total_input},"
-    csv_line += f"{metrics.total_output},"
-    csv_line += f"{metrics.mean_input_tokens:.3f},"
-    csv_line += f"{metrics.mean_output_tokens:.3f},"
-    csv_line += f"{metrics.max_input_tokens},"
-    csv_line += f"{metrics.max_output_tokens},"
-    csv_line += f"{metrics.output_throughput:.3f},"
-    csv_line += f"{metrics.in_out_throughput:.3f},"
-
-    csv_line += f"{metrics.min_ttft_ms:.3f},"
-    csv_line += f"{metrics.max_ttft_ms:.3f},"
-    csv_line += f"{metrics.mean_ttft_ms:.3f},"
-    csv_line += f"{metrics.median_ttft_ms:.3f},"
-    csv_line += f"{metrics.std_ttft_ms:.3f},"
-    csv_line += f"{metrics.p90_ttft_ms:.3f},"
-    csv_line += f"{metrics.p99_ttft_ms:.3f},"
-
-    csv_line += f"{metrics.min_tpot_ms:.3f},"
-    csv_line += f"{metrics.max_tpot_ms:.3f},"
-    csv_line += f"{metrics.mean_tpot_ms:.3f},"
-    csv_line += f"{metrics.median_tpot_ms:.3f},"
-    csv_line += f"{metrics.std_tpot_ms:.3f},"
-    csv_line += f"{metrics.p90_tpot_ms:.3f},"
-    csv_line += f"{metrics.p99_tpot_ms:.3f},"
-
-    csv_line += f"{metrics.min_e2e_ms:.3f},"
-    csv_line += f"{metrics.max_e2e_ms:.3f},"
-    csv_line += f"{metrics.mean_e2e_ms:.3f},"
-    csv_line += f"{metrics.median_e2e_ms:.3f},"
-    csv_line += f"{metrics.std_e2e_ms:.3f},"
-    csv_line += f"{metrics.p90_e2e_ms:.3f},"
-    csv_line += f"{metrics.p99_e2e_ms:.3f},"
-
-    csv_line += f"{metrics.min_itl_ms:.3f},"
-    csv_line += f"{metrics.max_itl_ms:.3f},"
-    csv_line += f"{metrics.mean_itl_ms:.3f},"
-    csv_line += f"{metrics.median_itl_ms:.3f},"
-    csv_line += f"{metrics.std_itl_ms:.3f},"
-    csv_line += f"{metrics.p90_itl_ms:.3f},"
-    csv_line += f"{metrics.p99_itl_ms:.3f}"
-
-    print(f"CSV format output:{csv_line}")
-
-
-def api_url_standardize(base_url: str, endpoint: str, backend: str) -> str:
-    """standardize api url
-
-    Args:
-        api_url (str): api url
-
-    Returns:
-        str: standardized api url
-    """
-    logger = logging.getLogger()
-    match backend:
-        case "vllm" | "openai":
-            api_url = f"{base_url}{endpoint}"
-            if not api_url.startswith("http"):
-                api_url = f"http://{api_url}"
-        case "ppl":
-            api_url = base_url
-        case "trt":
-            api_url = base_url
-            if not api_url.startswith("http"):
-                api_url = f"http://{api_url}"
-            if not api_url.endswith("/v2/models/ensemble/generate_stream"):
-                api_url = f"{api_url}/v2/models/ensemble/generate_stream"
-        case "amsv2":
-            api_url = base_url
-            if not api_url.startswith("http"):
-                api_url = f"http://{api_url}"
-            if not api_url.endswith("/text-generation/generate_stream"):
-                api_url = f"{api_url}/text-generation/generate_stream"
-        case "sglang":
-            api_url = base_url
-            if not api_url.startswith("http"):
-                api_url = f"http://{api_url}"
-            if not api_url.endswith("/generate"):
-                api_url = f"{api_url}/generate"
-        case _:
-            raise ValueError(f"Unknown backend: {backend}")
-
-    logger.info(f"using {backend} backend with api url: {api_url}")
-    return api_url
-
-
-def get_input_requests(
+def get_input_requests_queue(
     sampled_requests: List[Request],
     args: argparse.Namespace,
 ) -> List[List[Request]] | IterQueue | IterMpQueue:
@@ -474,28 +270,29 @@ def main(args: argparse.Namespace):
     tokenizer = get_tokenizer(tokenizer_id, trust_remote_code=args.trust_remote_code)
 
     # sample requests
-    dataset_sample = DATASET_SAMPLE[args.dataset]
-    sampled_requests: List[Request] = dataset_sample(
+    dataset_sampler = DATASET_SAMPLER[args.dataset]
+    sampled_requests: List[Request] = dataset_sampler(
         dataset_path=args.dataset_path,
         num_requests=args.num_requests,
         num_turns=args.num_turns,
         tokenizer=tokenizer,
         system_prompt_path=args.system_prompt_path,
     )
+    input_queue = get_input_requests_queue(sampled_requests, args)
 
-    input_requests = get_input_requests(sampled_requests, args)
     # start benchmark
     benchmark_start_time = time.perf_counter()
     clients = []
-    out_queue = queue.Queue() if args.execute_mode == "Thread" else mp.Queue()
-    logger.info(f"type(out_queue): {type(out_queue)}")
+    output_queue = queue.Queue() if args.execute_mode == "Thread" else mp.Queue()
+    logger.info(f"type(input_requests_queue): {type(input_queue)}")
+    logger.info(f"type(out_queue): {type(output_queue)}")
     for client_id in range(args.num_clients):
         if args.allow_repetitive_requests:
             # input_requests: List[List[Request]], input_requests_i: List[Request]
-            input_requests_i = input_requests[client_id]
+            input_queue_i = input_queue[client_id]
         else:
             # input_requests: IterQueue[Request] or IterMpQueue[Request]
-            input_requests_i = input_requests
+            input_queue_i = input_queue
 
         if args.execute_mode == "Thread":
             client = BenchThread(
@@ -510,8 +307,8 @@ def main(args: argparse.Namespace):
                 best_of=args.best_of,
                 use_beam_search=args.use_beam_search,
                 num_requests=args.num_requests,
-                input_requests=input_requests_i,
-                out_queue=out_queue,
+                input_queue=input_queue_i,
+                output_queue=output_queue,
             )
         elif args.execute_mode == "Process":
             client = BenchProcess(
@@ -526,8 +323,8 @@ def main(args: argparse.Namespace):
                 best_of=args.best_of,
                 use_beam_search=args.use_beam_search,
                 num_requests=args.num_requests,
-                input_requests=input_requests_i,
-                out_queue=out_queue,
+                input_queue=input_queue_i,
+                output_queue=output_queue,
             )
 
         client.start()
@@ -536,26 +333,27 @@ def main(args: argparse.Namespace):
             f"client {client_id} launched with ramp up time {client_id * args.ramp_up_time / args.num_clients}"
         )
 
-    logger.info(f"out_queue.empty(): {out_queue.empty()}")
-    if not args.allow_repetitive_requests:
-        logger.info(f"input_requests.empty(): {input_requests.empty()}")
-
     all_outputs = []
     for client in clients:
-        all_outputs += out_queue.get()
+        all_outputs += output_queue.get()
+        if args.execute_mode == "Thread":
+            client.join()
 
-    if not args.allow_repetitive_requests and not input_requests.empty():
-        input_requests.drain()
+    if args.execute_mode == "Process":
+        for client in clients:
+            client.join()
 
-    for client in clients:
-        client.join()
+        if not args.allow_repetitive_requests:
+            input_queue.clear()
+            logger.info(f"out_queue.empty(): {output_queue.empty()}")
+            logger.info(f"input_queue.empty(): {input_queue.empty()}")
 
     benchmark_duration = time.perf_counter() - benchmark_start_time
     logger.info(f"benchmark duration: {benchmark_duration:.2f}s")
     logger.info(f"output len: {len(all_outputs)}")
     metrics, _ = calculate_metrics(outputs=all_outputs, dur_s=benchmark_duration)
     logger.info(f"metrics calculated")
-    dump_metrics_and_results(metrics)
+    dump_metrics(metrics)
 
 
 if __name__ == "__main__":
@@ -591,7 +389,7 @@ if __name__ == "__main__":
         "--dataset",
         type=str,
         default="sharegpt",
-        choices=list(DATASET_SAMPLE.keys()),
+        choices=list(DATASET_SAMPLER.keys()),
         help="Dataset type.",
     )
     parser.add_argument(
@@ -689,7 +487,6 @@ if __name__ == "__main__":
         choices=["Thread", "Process"],
         help="Excute clients in multi-thread or multi-process.",
     )
-
     args, _ = parser.parse_known_args()
     logging.basicConfig(
         format="[%(levelname)s] %(asctime)s %(filename)s:%(lineno)d %(message)s",

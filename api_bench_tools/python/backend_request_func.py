@@ -6,48 +6,9 @@ import logging
 import requests
 import traceback
 
-from dataclasses import dataclass, field
-from typing import List, Optional, Union
-from transformers import AutoTokenizer, PreTrainedTokenizer, PreTrainedTokenizerFast
+from utils import RequestFuncInput, RequestFuncOutput
 
 HTTP_TIMEOUT = 6 * 60 * 60
-
-
-@dataclass
-class RequestFuncInput:
-    prompt: str
-    api_url: str
-    prompt_len: int
-    output_len: int
-    api_key: Optional[str] = None
-    model: Optional[str] = None
-    best_of: int = 1
-    use_beam_search: bool = False
-    client_id: Optional[int] = None
-    request_id: int = 0
-    num_requests: int = 1
-
-
-@dataclass
-class RequestFuncOutput:
-    generated_text: str = ""
-    success: bool = False
-    latency: float = 0.0
-    ttft: float = 0.0  # Time to first token
-    itl: List[float] = field(default_factory=list)  # List of inter-token latencies
-    prompt_len: int = 0
-    output_len: int = 0
-    error: str = ""
-    client_id: Optional[int] = None
-    request_id: int = 0
-
-
-# Since vllm must support Python 3.8, we can't use str.removeprefix(prefix)
-# introduced in Python 3.9
-def remove_prefix(text: str, prefix: str) -> str:
-    if text.startswith(prefix):
-        return text[len(prefix) :]
-    return text
 
 
 # curl -X POST http://10.198.31.25:8000/v1/completions -H "Content-Type: application/json" -d '{"model": "/mnt/llm2/llm_perf/hf_models/llama-7b-hf", "prompt": "Once upon a time", "temperature": 0.0, "best_of": 1, "max_tokens": 10, "min_tokens": 10, "stream": true, "ignore_eos": true}'
@@ -101,7 +62,7 @@ def request_openai_completions(
                     chunk_bytes = chunk_bytes.strip()
                     if not chunk_bytes:
                         continue
-                    chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data: ")
+                    chunk = str.removeprefix(chunk_bytes.decode("utf-8"), "data: ")
 
                     if chunk == "[DONE]":
                         latency = time.perf_counter() - st
@@ -367,7 +328,7 @@ def request_trtllm_generate_stream(
                     chunk_bytes = chunk_bytes.strip()
                     if not chunk_bytes:
                         continue
-                    chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data: ")
+                    chunk = str.removeprefix(chunk_bytes.decode("utf-8"), "data: ")
 
                     data = json.loads(chunk)
                     generated_text += data["text_output"]
@@ -459,7 +420,7 @@ def request_lightllm_generate_stream(
                     chunk_bytes = chunk_bytes.strip()
                     if not chunk_bytes:
                         continue
-                    chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data:")
+                    chunk = str.removeprefix(chunk_bytes.decode("utf-8"), "data:")
 
                     data = json.loads(chunk)
                     generated_text += data["token"]["text"]
@@ -567,7 +528,7 @@ def request_amsv2_generate_stream(
                     chunk_bytes = chunk_bytes.strip()
                     if not chunk_bytes:
                         continue
-                    chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data:")
+                    chunk = str.removeprefix(chunk_bytes.decode("utf-8"), "data:")
 
                     data = json.loads(chunk)
                     generated_text += data["generated_text"]
@@ -659,7 +620,7 @@ def request_sglang_generate(
                     chunk_bytes = chunk_bytes.strip()
                     if not chunk_bytes:
                         continue
-                    chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data: ")
+                    chunk = str.removeprefix(chunk_bytes.decode("utf-8"), "data: ")
 
                     if chunk == "[DONE]":
                         latency = time.perf_counter() - st
@@ -703,15 +664,6 @@ def request_sglang_generate(
     return output
 
 
-def get_tokenizer(
-    pretrained_model_name_or_path: str, trust_remote_code: bool
-) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast]:
-    return AutoTokenizer.from_pretrained(
-        pretrained_model_name_or_path=pretrained_model_name_or_path,
-        trust_remote_code=trust_remote_code,
-    )
-
-
 REQUEST_FUNCS = {
     "vllm": request_openai_completions,
     "ppl": request_ppl_completions,
@@ -723,11 +675,12 @@ REQUEST_FUNCS = {
 
 if __name__ == "__main__":
     import os
+
     os.environ["http_proxy"] = ""
     os.environ["HTTP_PROXY"] = ""
     os.environ["HTTPS_PROXY"] = ""
     os.environ["https_proxy"] = ""
-    
+
     request_func_input = RequestFuncInput(
         prompt="The future of ai is",
         api_url="127.0.0.1:33332",
